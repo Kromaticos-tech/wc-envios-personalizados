@@ -1,0 +1,12 @@
+{
+  "name": "wc-envios-personalizados-styles",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "build": "tailwindcss -i ./src/checkout.css -o ./assets/css/checkout.css --minify",
+    "watch": "tailwindcss -i ./src/checkout.css -o ./assets/css/checkout.css --watch"
+  },
+  "devDependencies": {
+    "tailwindcss": "^3.4.13"
+  }
+}

@@ -1,0 +1,13 @@
+# Dependencias de la compilación de estilos (se reinstalan con `npm install`).
+node_modules/
+
+# Paquetes generados por el script de empaquetado.
+*.zip
+
+# Basura de sistema operativo y editores.
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/
+*.bak

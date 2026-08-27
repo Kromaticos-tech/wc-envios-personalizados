@@ -1,0 +1,11 @@
+# Archivos que NO van en el ZIP de distribución del plugin.
+# Son herramientas de compilación: el plugin instalado solo necesita el CSS ya generado.
+.git
+.gitignore
+.distignore
+node_modules
+src
+package.json
+package-lock.json
+tailwind.config.js
+README.md
