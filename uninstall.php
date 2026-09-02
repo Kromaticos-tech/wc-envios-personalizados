@@ -3,6 +3,7 @@
 if (!defined('WP_UNINSTALL_PLUGIN')) exit;
 
 delete_option('wcep_version');
+delete_option('wcep_nota_feriados_limpiada');
 
 // Las sedes (CPT "tiendas") pertenecen a otro plugin y NO se eliminan aquí.
 // Si además quieres borrar los términos de la taxonomía "metodo_envio" al desinstalar, descomenta:

@@ -10,6 +10,8 @@ class WCEP_Ajax {
         add_action('wp_ajax_nopriv_wcep_get_sedes', [__CLASS__, 'get_sedes']);
         add_action('wp_ajax_wcep_get_ciudades', [__CLASS__, 'get_ciudades']);
         add_action('wp_ajax_nopriv_wcep_get_ciudades', [__CLASS__, 'get_ciudades']);
+        add_action('wp_ajax_wcep_get_franjas', [__CLASS__, 'get_franjas']);
+        add_action('wp_ajax_nopriv_wcep_get_franjas', [__CLASS__, 'get_franjas']);
     }
 
     // Lee y valida el slug del método que viene en la petición; corta con error si no llega.
@@ -63,13 +65,18 @@ class WCEP_Ajax {
         $metodo_slug   = self::metodo_solicitado();
         $ciudad_filtro = isset($_POST['ciudad']) ? sanitize_text_field(wp_unslash($_POST['ciudad'])) : '';
 
-        $sedes_encontradas = array_map(function ($sede_post) {
+        // La hora se toma una sola vez para todo el lote: si se leyera por sede, un listado que
+        // se procesa justo al cambiar el día podría devolver dos fechas base distintas.
+        $ahora = WCEP_Horarios::ahora();
+
+        $sedes_encontradas = array_map(function ($sede_post) use ($ahora) {
             $sede_id = $sede_post->ID;
             return [
                 'id'                     => $sede_id,
                 'nombre'                 => $sede_post->post_title,
                 'direccion'              => get_post_meta($sede_id, 'direccion_completa', true),
                 'horarios'               => get_post_meta($sede_id, 'horarios', true),
+                'disponibilidad'         => WCEP_Grupo_Horario::texto_de_sede($sede_id, $ahora),
                 'ciudad'                 => get_post_meta($sede_id, 'ciudad', true),
                 'mapa'                => get_post_meta($sede_id, 'ubicacion_mapa', true),
                 'costo_envio_texto'   => get_post_meta($sede_id, 'costo_envio_texto', true),
@@ -78,6 +85,17 @@ class WCEP_Ajax {
         }, self::consultar_sedes($metodo_slug, $ciudad_filtro));
 
         wp_send_json_success($sedes_encontradas);
+    }
+
+    // Franjas de entrega que aplican AHORA, calculadas con la hora de Venezuela del servidor.
+    //
+    // Va por AJAX y no con el resto de los datos al cargar la página porque el checkout puede
+    // estar cacheado, o el cliente puede haber abierto la pestaña antes del mediodía y elegir
+    // después. Se piden al hacer clic en la tarjeta, que es el momento más cercano a la decisión.
+    public static function get_franjas() {
+        check_ajax_referer('wcep_nonce', 'nonce');
+
+        wp_send_json_success(WCEP_Checkout::franjas_disponibles(self::metodo_solicitado()));
     }
 
     // Ciudades distintas que tienen al menos una sede activa en este método.

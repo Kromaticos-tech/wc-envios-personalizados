@@ -2,7 +2,7 @@
 /**
  * Plugin Name: WC Envíos Personalizados
  * Description: Selector de método de envío en tarjetas (Pickup / Delivery / Zoom) para el checkout de WooCommerce, usando el CPT "tiendas" como fuente de sedes.
- * Version: 1.11.1
+ * Version: 1.14.2
  * Author: Kromaticos
  * Author URI: https://kromaticos.com
  * Text Domain: wc-envios-personalizados
@@ -13,7 +13,7 @@ if (!defined('ABSPATH')) exit;
 
 define('WCEP_PATH', plugin_dir_path(__FILE__));
 define('WCEP_URL', plugin_dir_url(__FILE__));
-define('WCEP_VERSION', '1.11.1');
+define('WCEP_VERSION', '1.14.2');
 
 require_once WCEP_PATH . 'includes/class-activator.php';
 require_once WCEP_PATH . 'includes/class-deactivator.php';
@@ -29,8 +29,10 @@ function wcep_bootstrap() {
         return;
     }
 
+    require_once WCEP_PATH . 'includes/class-horarios.php';
     require_once WCEP_PATH . 'includes/class-sede-cpt.php';
     require_once WCEP_PATH . 'includes/class-taxonomy.php';
+    require_once WCEP_PATH . 'includes/class-grupo-horario.php';
     require_once WCEP_PATH . 'includes/class-sede-meta.php';
     require_once WCEP_PATH . 'includes/class-importador.php';
     require_once WCEP_PATH . 'includes/class-ajax.php';
@@ -41,6 +43,7 @@ function wcep_bootstrap() {
 
     WCEP_Sede_CPT::init();
     WCEP_Taxonomy::init();
+    WCEP_Grupo_Horario::init();
     WCEP_Sede_Meta::init();
     WCEP_Importador::init();
     WCEP_Ajax::init();
@@ -57,6 +60,10 @@ function wcep_bootstrap() {
     // que corre DESPUÉS de "plugins_loaded". Por eso el chequeo va acá y no arriba: preguntarlo
     // antes daba siempre "no existe" y cortaba el plugin entero.
     add_action('init', 'wcep_verificar_cpt_tiendas', 99);
+
+    // Va colgada de "init" y no del chequeo de versión: si un día no puede completarse (taxonomía
+    // todavía no registrada), así se reintenta en la próxima carga en vez de quedar por hecha.
+    add_action('init', 'wcep_limpiar_nota_feriados', 100);
 }
 
 // Solo avisa si algún método está configurado para sacar sus sedes de "tiendas" y ese CPT no
@@ -103,4 +110,37 @@ function wcep_check_version() {
     }
 
     update_option('wcep_version', WCEP_VERSION);
+}
+
+// La nota de feriados dejó de pedirse. Sacarla de los valores de arranque no alcanza: en los
+// sitios donde ya se sembró quedó guardada como meta del término y se seguiría mostrando en el
+// checkout. Se borra una sola vez y solo si el texto es exactamente el que sembraba el plugin;
+// una nota que el administrador escribió a mano no se toca.
+function wcep_limpiar_nota_feriados() {
+    if (get_option('wcep_nota_feriados_limpiada')) {
+        return;
+    }
+
+    $terminos = get_terms(['taxonomy' => 'metodo_envio', 'hide_empty' => false]);
+
+    // Sin marcar la opción: si la taxonomía todavía no está lista, conviene reintentarlo en la
+    // próxima carga en vez de dar la limpieza por hecha.
+    if (is_wp_error($terminos)) {
+        return;
+    }
+
+    // El valor se sembraba pasando por __(), así que en un sitio traducido lo guardado puede ser
+    // la traducción y no el original. Se comparan las dos formas.
+    $textos_sembrados = array_unique([
+        'Si la fecha cae feriado, se entrega el próximo día hábil.',
+        __('Si la fecha cae feriado, se entrega el próximo día hábil.', 'wc-envios-personalizados'),
+    ]);
+
+    foreach ($terminos as $termino) {
+        if (in_array(get_term_meta($termino->term_id, 'nota_disponibilidad', true), $textos_sembrados, true)) {
+            delete_term_meta($termino->term_id, 'nota_disponibilidad');
+        }
+    }
+
+    update_option('wcep_nota_feriados_limpiada', '1');
 }

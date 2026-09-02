@@ -178,6 +178,76 @@
 }
 
 
+/* --- Disponibilidad ------------------------------------------------------- */
+/* La línea "Puedes retirar: …" dentro de la caja de resumen. El separador la despega del bloque
+   de nombre y dirección, como en el diseño. */
+
+.wcep-aviso-disponibilidad {
+    margin-top: 0.75rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid rgba(31, 41, 55, 0.12);
+}
+
+.wcep-aviso-fecha {
+    color: #005db9 !important;
+    font-weight: 500 !important;
+}
+
+/* La aclaración de feriados: presente pero sin competir con la fecha. */
+.wcep-aviso-nota {
+    margin: 0.25rem 0 0 !important;
+    font-size: 0.75rem !important;
+    line-height: 1.4 !important;
+    font-weight: 400 !important;
+    color: #6b7280 !important;
+}
+
+
+/* --- Franjas de entrega --------------------------------------------------- */
+
+.wcep-franjas {
+    margin-top: 1rem;
+}
+
+.wcep-franja {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    margin-bottom: 0.5rem;
+    padding: 0.75rem 1rem;
+    border: 1px solid #e5e7eb;
+    border-radius: 0.75rem;
+    background-color: #fff;
+    cursor: pointer;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.wcep-franja:hover {
+    border-color: #60a5fa;
+}
+
+/* :has() para pintar la fila entera desde el radio marcado. Los navegadores que no lo soportan
+   siguen mostrando el punto del radio, que es lo que de verdad comunica la selección. */
+.wcep-franja:has(input:checked) {
+    border-color: #005db9;
+    box-shadow: 0 0 0 1px #005db9;
+}
+
+.wcep-franja input[type="radio"] {
+    flex-shrink: 0;
+    width: 1rem;
+    height: 1rem;
+    margin: 0;
+    accent-color: #005db9;
+}
+
+.wcep-franja-etiqueta {
+    font-size: 0.875rem !important;
+    line-height: 1.4 !important;
+    color: #1f2937 !important;
+}
+
+
 /* --- Bloque "Datos de entrega" -------------------------------------------- */
 /* Los campos son los shipping_* nativos de WooCommerce movidos aquí por el JS,
    así que se estiliza su markup en lugar de generar uno propio. */

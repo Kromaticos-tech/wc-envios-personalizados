@@ -46,6 +46,8 @@ class WCEP_Sede_Meta {
         $ciudad              = get_post_meta($sede->ID, 'ciudad', true);
         $costo_envio_texto   = get_post_meta($sede->ID, 'costo_envio_texto', true);
         $costo_envio_visible = get_post_meta($sede->ID, 'costo_envio_mostrar', true);
+        $grupo_actual        = WCEP_Grupo_Horario::grupo_de_sede($sede->ID);
+        $vista_previa        = WCEP_Grupo_Horario::texto_de_sede($sede->ID);
         ?>
         <p>
             <label><input type="checkbox" name="activo" value="1" <?php checked($sede_activa, '1'); ?>>
@@ -54,6 +56,24 @@ class WCEP_Sede_Meta {
         <p>
             <label for="wcep_ciudad"><?php esc_html_e('Ciudad', 'wc-envios-personalizados'); ?></label><br>
             <input type="text" id="wcep_ciudad" name="ciudad" value="<?php echo esc_attr($ciudad); ?>" class="widefat" style="max-width:420px">
+        </p>
+        <p>
+            <label for="wcep_grupo_horario"><?php esc_html_e('Grupo de horario', 'wc-envios-personalizados'); ?></label><br>
+            <select id="wcep_grupo_horario" name="wcep_grupo_horario">
+                <option value="0"><?php esc_html_e('— Sin aviso de disponibilidad —', 'wc-envios-personalizados'); ?></option>
+                <?php foreach (WCEP_Grupo_Horario::grupos() as $grupo) : ?>
+                    <option value="<?php echo esc_attr($grupo->term_id); ?>" <?php selected($grupo_actual, $grupo->term_id); ?>>
+                        <?php echo esc_html($grupo->name); ?>
+                    </option>
+                <?php endforeach; ?>
+            </select>
+            <br>
+            <span class="description">
+                <?php echo esc_html($vista_previa
+                    // translators: %s es el texto que verá el cliente, ej. "Retira a partir de mañana a las 3:00 pm".
+                    ? sprintf(__('Hoy diría: %s', 'wc-envios-personalizados'), $vista_previa)
+                    : __('Sin grupo, la sede aparece en el checkout pero sin fecha de retiro.', 'wc-envios-personalizados')); ?>
+            </span>
         </p>
 
         <?php if (self::aporta_direccion(get_post_type($sede))) : ?>
@@ -100,6 +120,11 @@ class WCEP_Sede_Meta {
 
         update_post_meta($sede_id, 'activo', isset($_POST['activo']) ? '1' : '0');
         update_post_meta($sede_id, 'ciudad', sanitize_text_field(wp_unslash($_POST['ciudad'] ?? '')));
+
+        // Un solo grupo por sede: se reemplaza la asignación entera en vez de añadir. Con 0 se
+        // queda sin grupo, que es como se excluye a una tienda del aviso de disponibilidad.
+        $grupo_id = absint($_POST['wcep_grupo_horario'] ?? 0);
+        wp_set_object_terms($sede_id, $grupo_id ? [$grupo_id] : [], WCEP_Grupo_Horario::TAXONOMIA, false);
 
         // Solo se guardan si la caja los pintó: en "tiendas" la dirección la maneja JetEngine y
         // escribirla aquí la borraría en cada guardado.

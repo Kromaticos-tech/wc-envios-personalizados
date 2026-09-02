@@ -4,7 +4,8 @@
   "version": "1.0.0",
   "scripts": {
     "build": "tailwindcss -i ./src/checkout.css -o ./assets/css/checkout.css --minify",
-    "watch": "tailwindcss -i ./src/checkout.css -o ./assets/css/checkout.css --watch"
+    "watch": "tailwindcss -i ./src/checkout.css -o ./assets/css/checkout.css --watch",
+    "package": "npm run build && python bin/empaquetar.py"
   },
   "devDependencies": {
     "tailwindcss": "^3.4.13"

@@ -21,13 +21,32 @@ class WCEP_Sede_CPT {
         // la taxonomía se enganche a ambos post types en prioridad 20.
         add_action('init', [__CLASS__, 'register'], 15);
 
-        add_filter('manage_' . self::POST_TYPE . '_posts_columns', [__CLASS__, 'columnas']);
-        add_action('manage_' . self::POST_TYPE . '_posts_custom_column', [__CLASS__, 'contenido_columna'], 10, 2);
+        // Prioridad 20: las columnas y acciones se enganchan a TODOS los post types que alojan
+        // sedes, y "tiendas" no existe todavía en "plugins_loaded". Antes solo cubrían el CPT
+        // propio, así que en la lista de Tiendas —donde viven las de Pickup— no se veía cuáles
+        // estaban activas ni se podían desactivar en lote.
+        add_action('init', [__CLASS__, 'hooks_listado'], 20);
+
         add_action('restrict_manage_posts', [__CLASS__, 'filtro_ciudad']);
         add_filter('parse_query', [__CLASS__, 'aplicar_filtro_ciudad']);
-        add_filter('bulk_actions-edit-' . self::POST_TYPE, [__CLASS__, 'acciones_lote']);
-        add_filter('handle_bulk_actions-edit-' . self::POST_TYPE, [__CLASS__, 'ejecutar_accion_lote'], 10, 3);
         add_action('admin_notices', [__CLASS__, 'aviso_accion_lote']);
+    }
+
+    public static function hooks_listado() {
+        if (!is_admin()) {
+            return;
+        }
+
+        foreach (array_keys(self::post_types_disponibles()) as $post_type) {
+            add_filter("manage_{$post_type}_posts_columns", [__CLASS__, 'columnas']);
+            add_action("manage_{$post_type}_posts_custom_column", [__CLASS__, 'contenido_columna'], 10, 2);
+            add_filter("bulk_actions-edit-{$post_type}", [__CLASS__, 'acciones_lote']);
+            add_filter("handle_bulk_actions-edit-{$post_type}", [__CLASS__, 'ejecutar_accion_lote'], 10, 3);
+        }
+    }
+
+    public static function es_post_type_de_sedes($post_type) {
+        return array_key_exists($post_type, self::post_types_disponibles());
     }
 
     public static function register() {
@@ -129,6 +148,7 @@ class WCEP_Sede_CPT {
             if ($clave === 'title') {
                 $nuevas['wcep_ciudad']    = __('Ciudad', 'wc-envios-personalizados');
                 $nuevas['wcep_direccion'] = __('Dirección', 'wc-envios-personalizados');
+                $nuevas['wcep_grupo']     = __('Grupo de horario', 'wc-envios-personalizados');
                 $nuevas['wcep_activo']    = __('Activa', 'wc-envios-personalizados');
             }
         }
@@ -149,6 +169,16 @@ class WCEP_Sede_CPT {
             return;
         }
 
+        // Sin grupo la sede aparece en el checkout pero sin fecha de retiro. Se muestra el "—" en
+        // la lista para que sea una decisión visible y no un olvido que nadie nota.
+        if ($columna === 'wcep_grupo') {
+            $grupo_id = WCEP_Grupo_Horario::grupo_de_sede($sede_id);
+            $grupo    = $grupo_id ? get_term($grupo_id, WCEP_Grupo_Horario::TAXONOMIA) : null;
+
+            echo ($grupo && !is_wp_error($grupo)) ? esc_html($grupo->name) : '—';
+            return;
+        }
+
         if ($columna === 'wcep_activo') {
             echo get_post_meta($sede_id, 'activo', true) === '1'
                 ? '<span style="color:#1a7f37;font-weight:600">✔</span>'
@@ -157,11 +187,11 @@ class WCEP_Sede_CPT {
     }
 
     public static function filtro_ciudad($post_type) {
-        if ($post_type !== self::POST_TYPE) {
+        if (!self::es_post_type_de_sedes($post_type)) {
             return;
         }
 
-        $ciudades       = self::ciudades_existentes();
+        $ciudades       = self::ciudades_existentes($post_type);
         $ciudad_elegida = isset($_GET[self::PARAM_CIUDAD]) ? sanitize_text_field(wp_unslash($_GET[self::PARAM_CIUDAD])) : '';
 
         if (empty($ciudades)) {
@@ -180,7 +210,7 @@ class WCEP_Sede_CPT {
         if (!is_admin() || !$consulta->is_main_query()) {
             return $consulta;
         }
-        if (($consulta->query_vars['post_type'] ?? '') !== self::POST_TYPE) {
+        if (!self::es_post_type_de_sedes($consulta->query_vars['post_type'] ?? '')) {
             return $consulta;
         }
         if (empty($_GET[self::PARAM_CIUDAD])) {

@@ -156,6 +156,9 @@ jQuery(function ($) {
     function renderDetalle(metodo) {
         $panelDetalle.empty();
         guardarCampoOculto('wcep_sede_id', '');
+        // Se limpia al cambiar de tarjeta: si no, la franja elegida en Delivery seguiría viajando
+        // en el POST después de pasarse a Pickup.
+        guardarCampoOculto('wcep_franja', '');
 
         if (!metodo.requiere_sede) {
             // Delivery: no elige sede, así que los datos de la caja salen del propio método.
@@ -166,6 +169,7 @@ jQuery(function ($) {
                     direccion: metodo.aviso_direccion
                 }));
             }
+            agregarFranjas(metodo);
             return;
         }
 
@@ -176,6 +180,7 @@ jQuery(function ($) {
         }
         $panelDetalle.append('<select class="wcep-sede wcep-select"></select>');
         $panelDetalle.append('<div class="wcep-aviso"></div>');
+        agregarFranjas(metodo);
 
         if (metodo.requiere_ciudad) {
             // Las sedes se cargan recién cuando hay una ciudad elegida, para no listar todo el país.
@@ -185,6 +190,15 @@ jQuery(function ($) {
         }
 
         cargarSedes(metodo.slug, '');
+    }
+
+    // Las franjas no dependen de la sede, así que el bloque se agrega al pintar el detalle y no
+    // al elegir tienda. Un método sin franjas configuradas simplemente no lo tiene.
+    function agregarFranjas(metodo) {
+        if (!metodo.tiene_franjas) return;
+
+        $panelDetalle.append('<div class="wcep-franjas"></div>');
+        cargarFranjas(metodo);
     }
 
     function placeholderSede(metodo) {
@@ -387,9 +401,10 @@ jQuery(function ($) {
 
         if (metodo.mostrar_resumen) {
             $contenedorAviso.append(cajaResumen({
-                metodo:    metodo,
-                titulo:    sedeElegida.nombre,
-                direccion: sedeElegida.direccion
+                metodo:         metodo,
+                titulo:         sedeElegida.nombre,
+                direccion:      sedeElegida.direccion,
+                disponibilidad: sedeElegida.disponibilidad
             }));
         }
         if (sedeElegida.costo_envio_mostrar && sedeElegida.costo_envio_texto) {
@@ -397,8 +412,10 @@ jQuery(function ($) {
         }
     });
 
-    // Resumen de lo elegido: avatar, nombre, dirección e ilustración. Sin línea de disponibilidad
-    // ("Puedes retirar: hoy a las 6:00 pm"): esa lógica de horarios quedó descartada desde el plan.
+    // Resumen de lo elegido: avatar, nombre, dirección, ilustración y —cuando la sede tiene grupo
+    // de horario— la línea de disponibilidad ("Puedes retirar: Retira a partir de mañana a las
+    // 3:00 pm"). El texto llega ya calculado desde PHP: acá no se hacen cuentas con fechas, porque
+    // el reloj y la zona horaria del navegador son los del cliente y no los de la tienda.
     function cajaResumen(datos) {
         const ilustracion = datos.metodo.ilustracion;
 
@@ -413,8 +430,72 @@ jQuery(function ($) {
                 '</div>' +
                 (ilustracion ? '<img src="' + escaparHtml(ilustracion) + '" class="wcep-aviso-ilustracion" alt="">' : '') +
             '</div>' +
+            lineaDisponibilidad(datos.metodo, datos.disponibilidad) +
         '</div>';
     }
+
+    // El prefijo es opcional y se concatena al texto del grupo. Se pueden repartir de dos formas:
+    // todo en el texto del grupo ("Retira a partir de mañana a las 3:00 pm") o partido, con el
+    // prefijo fijo en negro ("Puedes retirar:") y el grupo aportando solo la fecha.
+    function lineaDisponibilidad(metodo, texto) {
+        if (!texto) return '';
+
+        const prefijo = metodo.prefijo_disponibilidad
+            ? '<span class="wcep-aviso-prefijo">' + escaparHtml(metodo.prefijo_disponibilidad) + '</span> '
+            : '';
+
+        return '<div class="wcep-aviso-disponibilidad">' +
+            '<p class="wcep-aviso-texto">' + prefijo + '<span class="wcep-aviso-fecha">' + escaparHtml(texto) + '</span></p>' +
+            notaDisponibilidad(metodo) +
+        '</div>';
+    }
+
+    // Aclaración opcional bajo la fecha. Sin texto cargado en el método, no se pinta nada.
+    function notaDisponibilidad(metodo) {
+        return metodo.nota_disponibilidad
+            ? '<p class="wcep-aviso-nota">' + escaparHtml(metodo.nota_disponibilidad) + '</p>'
+            : '';
+    }
+
+    // --- Franjas de entrega ----------------------------------------------------------------------
+    // Qué franjas aplican depende de la hora, así que se piden al servidor en cada clic y no viajan
+    // con la página: el checkout puede estar cacheado, o el cliente puede haber abierto la pestaña
+    // antes del mediodía y elegir después del corte.
+
+    function cargarFranjas(metodo) {
+        const $bloque = $panelDetalle.find('.wcep-franjas');
+        if (!$bloque.length) return;
+
+        $.post(WCEP.ajaxUrl, {
+            action: 'wcep_get_franjas',
+            nonce: WCEP.nonce,
+            metodo: metodo.slug
+        }, function (respuesta) {
+            const franjas = respuesta.success ? respuesta.data : [];
+
+            if (!franjas.length) {
+                $bloque.html('<p class="wcep-aviso-nota">' + escaparHtml(textos.sinFranjas || 'No hay horarios de entrega disponibles en este momento.') + '</p>');
+                return;
+            }
+
+            let html = titulo(metodo.titulo_franjas || textos.tituloFranjas || '¿Cuándo quieres recibirlo?');
+
+            franjas.forEach(function (franja) {
+                html += '<label class="wcep-franja">' +
+                    '<input type="radio" name="wcep_franja_opcion" value="' + escaparHtml(franja.id) + '">' +
+                    '<span class="wcep-franja-etiqueta">' + escaparHtml(franja.etiqueta) + '</span>' +
+                '</label>';
+            });
+
+            // Ninguna viene marcada: elegir el horario es una decisión del cliente, y premarcar la
+            // primera hace que muchos paguen sin mirarla y después reclamen la entrega a otra hora.
+            $bloque.html(html + notaDisponibilidad(metodo));
+        });
+    }
+
+    $(document).on('change', 'input[name="wcep_franja_opcion"]', function () {
+        guardarCampoOculto('wcep_franja', $(this).val());
+    });
 
     function cajaCosto(textoCosto) {
         return '<div class="wcep-caja-costo">' +

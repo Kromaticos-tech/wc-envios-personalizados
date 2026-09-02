@@ -12,7 +12,16 @@ class WCEP_Taxonomy {
     // Estilos disponibles para la caja de aviso (Pickup va gris, Delivery morado en el diseño).
     const ESTILOS_AVISO = ['morado', 'gris'];
 
+    // Filas vacías que se agregan al final de la tabla de franjas para poder cargar nuevas.
+    const FILAS_FRANJA_EXTRA = 2;
+
+    // Marca de que los textos y franjas de arranque ya se rellenaron alguna vez.
+    const OPCION_SEMBRADO = 'wcep_metodos_sembrados';
+
     public static function init() {
+        // 25: después de register(), cuando los términos ya se pueden consultar.
+        add_action('init', [__CLASS__, 'sembrar_predeterminados'], 25);
+
         // Prioridad 20: JetEngine registra el CPT "tiendas" en "init" con prioridad normal,
         // así que la taxonomía se engancha después, cuando el post type ya existe.
         add_action('init', [__CLASS__, 'register'], 20);
@@ -40,6 +49,53 @@ class WCEP_Taxonomy {
             // asignar el método desde el editor.
             'show_in_rest'      => true,
         ]);
+    }
+
+    // --- Valores de arranque -------------------------------------------------------------------
+
+    // Franjas de entrega listas para usar, por slug de método. Ahorra cargar a mano una tabla de
+    // cuatro filas que además es fácil de equivocar en los bordes (11:59/12:00).
+    private static function valores_predeterminados() {
+        return [
+            'delivery' => [
+                'titulo_franjas'      => __('¿Cuándo quieres recibirlo?', 'wc-envios-personalizados'),
+                'franjas'             => [
+                    // Pedido por la mañana: alcanza para la tarde del mismo día.
+                    ['desde' => '00:00', 'hasta' => '11:59', 'offset' => 0, 'inicio' => '15:00', 'fin' => '18:00'],
+                    ['desde' => '00:00', 'hasta' => '11:59', 'offset' => 1, 'inicio' => '10:00', 'fin' => '12:00'],
+                    // Pedido de mediodía en adelante: todo pasa al día siguiente.
+                    ['desde' => '12:00', 'hasta' => '23:59', 'offset' => 1, 'inicio' => '12:00', 'fin' => '15:00'],
+                    ['desde' => '12:00', 'hasta' => '23:59', 'offset' => 1, 'inicio' => '15:00', 'fin' => '18:00'],
+                ],
+            ],
+        ];
+    }
+
+    public static function sembrar_predeterminados() {
+        if (get_option(self::OPCION_SEMBRADO)) {
+            return;
+        }
+
+        update_option(self::OPCION_SEMBRADO, '1');
+
+        foreach (self::valores_predeterminados() as $metodo_slug => $metas) {
+            $termino = get_term_by('slug', $metodo_slug, 'metodo_envio');
+
+            if (!$termino) {
+                continue;
+            }
+
+            foreach ($metas as $clave => $valor) {
+                // Solo se rellena lo que está vacío. A diferencia de los grupos, que son objetos
+                // nuevos, acá se toca un término que el administrador ya configuró: pisarle una
+                // tabla de franjas que armó a mano sería inaceptable.
+                $actual = get_term_meta($termino->term_id, $clave, true);
+
+                if ($actual === '' || $actual === [] || $actual === false) {
+                    update_term_meta($termino->term_id, $clave, $valor);
+                }
+            }
+        }
     }
 
     private static function centinela() {
@@ -195,6 +251,42 @@ class WCEP_Taxonomy {
         </tr>
 
         <tr>
+            <th colspan="2"><h2><?php esc_html_e('Disponibilidad', 'wc-envios-personalizados'); ?></h2></th>
+        </tr>
+        <tr class="form-field">
+            <th><label for="prefijo_disponibilidad"><?php esc_html_e('Prefijo de la línea', 'wc-envios-personalizados'); ?></label></th>
+            <td>
+                <input type="text" name="prefijo_disponibilidad" id="prefijo_disponibilidad" value="<?php echo esc_attr($valores['prefijo_disponibilidad']); ?>" class="regular-text" placeholder="<?php esc_attr_e('Ej: Puedes retirar:', 'wc-envios-personalizados'); ?>">
+                <p class="description"><?php esc_html_e('Texto en negro que antecede a la fecha dentro de la caja de resumen. En Pickup "Puedes retirar:", en Delivery "Recibes:".', 'wc-envios-personalizados'); ?></p>
+            </td>
+        </tr>
+        <tr class="form-field">
+            <th><label for="nota_disponibilidad"><?php esc_html_e('Nota al pie', 'wc-envios-personalizados'); ?></label></th>
+            <td>
+                <input type="text" name="nota_disponibilidad" id="nota_disponibilidad" value="<?php echo esc_attr($valores['nota_disponibilidad']); ?>" class="large-text">
+                <p class="description"><?php esc_html_e('Aclaración opcional en gris bajo la fecha. Vacío, no se muestra nada.', 'wc-envios-personalizados'); ?></p>
+            </td>
+        </tr>
+
+        <tr>
+            <th colspan="2"><h2><?php esc_html_e('Franjas de entrega', 'wc-envios-personalizados'); ?></h2></th>
+        </tr>
+        <tr class="form-field">
+            <th><label for="titulo_franjas"><?php esc_html_e('Título del bloque', 'wc-envios-personalizados'); ?></label></th>
+            <td>
+                <input type="text" name="titulo_franjas" id="titulo_franjas" value="<?php echo esc_attr($valores['titulo_franjas']); ?>" class="regular-text" placeholder="<?php esc_attr_e('Ej: ¿Cuándo quieres recibirlo?', 'wc-envios-personalizados'); ?>">
+            </td>
+        </tr>
+        <tr class="form-field">
+            <th><?php esc_html_e('Franjas', 'wc-envios-personalizados'); ?></th>
+            <td>
+                <?php self::tabla_franjas($valores['franjas']); ?>
+                <p class="description"><?php esc_html_e('Cada fila dice: si el pedido entra dentro de esa ventana horaria, se ofrece esta franja de entrega. Se le muestran al cliente todas las filas cuya ventana contenga la hora actual de Venezuela, y tiene que elegir una. Deja una fila sin horas para borrarla.', 'wc-envios-personalizados'); ?></p>
+                <p class="description"><?php esc_html_e('Si no cargas ninguna fila, el método no pide franja.', 'wc-envios-personalizados'); ?></p>
+            </td>
+        </tr>
+
+        <tr>
             <th colspan="2"><h2><?php esc_html_e('Imágenes', 'wc-envios-personalizados'); ?></h2></th>
         </tr>
         <tr class="form-field">
@@ -219,6 +311,64 @@ class WCEP_Taxonomy {
             </td>
         </tr>
         <?php
+    }
+
+    // Tabla de franjas: las filas guardadas más dos vacías para agregar. Sin JS a propósito —
+    // un repetidor dinámico es mucha maquinaria para una tabla que se toca dos veces al año.
+    private static function tabla_franjas(array $franjas) {
+        $filas = array_merge($franjas, array_fill(0, self::FILAS_FRANJA_EXTRA, [
+            'desde'  => '',
+            'hasta'  => '',
+            'offset' => 0,
+            'inicio' => '',
+            'fin'    => '',
+        ]));
+
+        echo '<table class="widefat striped" style="max-width:760px"><thead><tr>';
+        echo '<th>' . esc_html__('Pedido desde', 'wc-envios-personalizados') . '</th>';
+        echo '<th>' . esc_html__('Pedido hasta', 'wc-envios-personalizados') . '</th>';
+        echo '<th>' . esc_html__('Se entrega', 'wc-envios-personalizados') . '</th>';
+        echo '<th>' . esc_html__('Entre', 'wc-envios-personalizados') . '</th>';
+        echo '<th>' . esc_html__('Y', 'wc-envios-personalizados') . '</th>';
+        echo '</tr></thead><tbody>';
+
+        foreach ($filas as $indice => $fila) {
+            $nombre = 'franjas[' . $indice . ']';
+
+            echo '<tr>';
+            echo '<td><input type="time" name="' . esc_attr($nombre) . '[desde]" value="' . esc_attr($fila['desde']) . '"></td>';
+            echo '<td><input type="time" name="' . esc_attr($nombre) . '[hasta]" value="' . esc_attr($fila['hasta']) . '"></td>';
+            echo '<td>' . self::control_offset($nombre, (int) $fila['offset']) . '</td>';
+            echo '<td><input type="time" name="' . esc_attr($nombre) . '[inicio]" value="' . esc_attr($fila['inicio']) . '"></td>';
+            echo '<td><input type="time" name="' . esc_attr($nombre) . '[fin]" value="' . esc_attr($fila['fin']) . '"></td>';
+            echo '</tr>';
+        }
+
+        echo '</tbody></table>';
+    }
+
+    private static function control_offset($nombre, $offset_actual) {
+        $opciones = [
+            0 => __('El mismo día', 'wc-envios-personalizados'),
+            1 => __('Al día siguiente', 'wc-envios-personalizados'),
+            2 => __('En 2 días', 'wc-envios-personalizados'),
+            3 => __('En 3 días', 'wc-envios-personalizados'),
+        ];
+
+        $html = '<select name="' . esc_attr($nombre) . '[offset]">';
+        foreach ($opciones as $valor => $etiqueta) {
+            $html .= '<option value="' . esc_attr($valor) . '" ' . selected($offset_actual, $valor, false) . '>' . esc_html($etiqueta) . '</option>';
+        }
+
+        return $html . '</select>';
+    }
+
+    // Las franjas se guardan como un solo array en un term meta, no como filas sueltas: así se
+    // leen y se reemplazan de una, sin quedar restos de una configuración anterior más larga.
+    public static function leer_franjas($termino_id) {
+        $guardadas = get_term_meta($termino_id, 'franjas', true);
+
+        return is_array($guardadas) ? $guardadas : [];
     }
 
     // Explica al admin qué archivo empaquetado se usa si deja la URL vacía.
@@ -252,6 +402,10 @@ class WCEP_Taxonomy {
             'icono'                  => get_term_meta($termino_id, 'icono', true),
             'icono_activo'           => get_term_meta($termino_id, 'icono_activo', true),
             'ilustracion'            => get_term_meta($termino_id, 'ilustracion', true),
+            'prefijo_disponibilidad' => get_term_meta($termino_id, 'prefijo_disponibilidad', true),
+            'nota_disponibilidad'    => get_term_meta($termino_id, 'nota_disponibilidad', true),
+            'titulo_franjas'         => get_term_meta($termino_id, 'titulo_franjas', true),
+            'franjas'                => self::leer_franjas($termino_id),
         ];
     }
 
@@ -263,7 +417,10 @@ class WCEP_Taxonomy {
             return;
         }
 
-        $textos = ['descripcion', 'placeholder_sede', 'aviso_titulo', 'aviso_direccion', 'etiqueta_envio'];
+        $textos = [
+            'descripcion', 'placeholder_sede', 'aviso_titulo', 'aviso_direccion', 'etiqueta_envio',
+            'prefijo_disponibilidad', 'nota_disponibilidad', 'titulo_franjas',
+        ];
         foreach ($textos as $campo) {
             update_term_meta($termino_id, $campo, sanitize_text_field(wp_unslash($_POST[$campo] ?? '')));
         }
@@ -290,8 +447,34 @@ class WCEP_Taxonomy {
             $estilo_aviso = 'morado';
         }
         update_term_meta($termino_id, 'estilo_aviso', $estilo_aviso);
+        update_term_meta($termino_id, 'franjas', self::sanear_franjas($_POST['franjas'] ?? []));
 
         self::guardar_predeterminado($termino_id, isset($_POST['predeterminado']));
+    }
+
+    // Una fila sin horario de entrega no describe nada, así que se descarta. Es también la forma
+    // de borrar una franja: se le vacían las horas y se guarda.
+    private static function sanear_franjas($filas_enviadas) {
+        $franjas = [];
+
+        foreach ((array) $filas_enviadas as $fila) {
+            if (empty($fila['inicio']) || empty($fila['fin'])) {
+                continue;
+            }
+
+            $franjas[] = [
+                // ?? no alcanza: un <input type="time"> vacío llega como '' y no como null, así que
+                // "Pedido hasta" en blanco se guardaba como 00:00 y la franja solo aplicaba a
+                // medianoche exacta. Una fila sin ventana horaria vale todo el día.
+                'desde'  => WCEP_Grupo_Horario::sanear_hora(empty($fila['desde']) ? '00:00' : $fila['desde']),
+                'hasta'  => WCEP_Grupo_Horario::sanear_hora(empty($fila['hasta']) ? '23:59' : $fila['hasta']),
+                'offset' => absint($fila['offset'] ?? 0),
+                'inicio' => WCEP_Grupo_Horario::sanear_hora($fila['inicio']),
+                'fin'    => WCEP_Grupo_Horario::sanear_hora($fila['fin']),
+            ];
+        }
+
+        return $franjas;
     }
 
     // El predeterminado es excluyente: al marcar uno se desmarcan todos los demás.
