@@ -4,6 +4,17 @@ if (!defined('WP_UNINSTALL_PLUGIN')) exit;
 
 delete_option('wcep_version');
 delete_option('wcep_nota_feriados_limpiada');
+delete_option('wcep_frase_retiro_actualizada');
+
+// Tarifas de delivery por producto.
+delete_option('wcep_delivery_skus_especial');
+delete_option('wcep_delivery_monto_especial');
+delete_option('wcep_delivery_skus_whatsapp');
+delete_option('wcep_delivery_mensaje_whatsapp');
+
+// Ajustes del correo de "pedido listo" (asunto, encabezado y texto extra editables desde
+// WooCommerce → Ajustes → Correos electrónicos).
+delete_option('woocommerce_wcep_pedido_listo_settings');
 
 // Las sedes (CPT "tiendas") pertenecen a otro plugin y NO se eliminan aquí.
 // Si además quieres borrar los términos de la taxonomía "metodo_envio" al desinstalar, descomenta:

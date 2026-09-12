@@ -117,7 +117,8 @@
 /* --- Caja de resumen ------------------------------------------------------ */
 
 .wcep-caja-aviso,
-.wcep-caja-costo {
+.wcep-caja-costo,
+.wcep-caja-mensaje {
     margin-top: 0.25rem;
     padding: 1rem;
     border-radius: 0.75rem;
@@ -135,6 +136,33 @@
 .wcep-caja-costo {
     padding: 0.75rem 1rem;
     background-color: #f1f7f9;
+}
+
+/* El aviso del método (el cobro a destino de Zoom y sus montos por kilo). Mismo tono que la caja de
+   costo: informa, no compite con la caja de resumen. */
+.wcep-caja-mensaje {
+    padding: 0.75rem 1rem;
+    background-color: #f1f7f9;
+}
+
+/* La primera línea del mensaje hace de título y va en negrita, con el mismo peso y color que el
+   nombre de la sede en la caja de resumen: da dónde apoyar la vista antes de la lista de montos. */
+.wcep-mensaje-titulo {
+    margin: 0 !important;
+    font-size: 0.875rem !important;
+    line-height: 1.4 !important;
+    font-weight: 600 !important;
+    color: #1f2937 !important;
+}
+
+/* pre-line y no <br>: el texto llega escapado desde el admin con sus saltos de línea intactos, y
+   así cada monto por kilo cae en su propio renglón sin meter etiquetas en el medio. */
+.wcep-mensaje-texto {
+    margin: 0 !important;
+    font-size: 0.875rem !important;
+    line-height: 1.5 !important;
+    color: #374151 !important;
+    white-space: pre-line;
 }
 
 .wcep-aviso-avatar {
@@ -294,19 +322,14 @@
     display: none;
 }
 
-/* WooCommerce ya pinta un <abbr class="required">*</abbr> junto al label.
-   El diseño además pide el texto "(Campo obligatorio)" en rojo al lado. */
+/* WooCommerce ya pinta un <abbr class="required">*</abbr> junto al label. El diseño pedía además el
+   texto "(Campo obligatorio)" al lado, y el cliente lo sacó (Slack, 07/09/2026): el asterisco rojo
+   se entiende solo y la frase repetida en cada campo llenaba el formulario de ruido. */
 .wcep-tarjeta .wcep-campo-entrega label .required,
 .wcep-seccion .wcep-campo-entrega label .required {
     color: #dc2626 !important;
     text-decoration: none;
     border: 0;
-}
-
-.wcep-campo-entrega label .required::after {
-    content: " (Campo obligatorio)";
-    font-size: 0.75rem;
-    font-weight: 500;
 }
 
 .wcep-campo-entrega .woocommerce-input-wrapper {

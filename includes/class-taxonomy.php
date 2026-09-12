@@ -15,8 +15,16 @@ class WCEP_Taxonomy {
     // Filas vacías que se agregan al final de la tabla de franjas para poder cargar nuevas.
     const FILAS_FRANJA_EXTRA = 2;
 
-    // Marca de que los textos y franjas de arranque ya se rellenaron alguna vez.
-    const OPCION_SEMBRADO = 'wcep_metodos_sembrados';
+    // Marca de hasta qué versión se rellenaron los valores de arranque. Guarda la versión y no un
+    // simple "1" porque cada tanto se suma un valor nuevo (el mensaje de Zoom, sin ir más lejos), y
+    // con un booleano los sitios ya instalados nunca lo recibirían. Al subir esta constante el
+    // sembrado se repite una vez, y como solo rellena lo que está vacío, no pisa nada configurado.
+    const OPCION_SEMBRADO  = 'wcep_metodos_sembrados';
+    const VERSION_SEMBRADO = '1.16.0';
+
+    // Marca de que los métodos de arranque ya se intentaron crear. Igual que con los grupos de
+    // horario: si el administrador los borra a propósito, no vuelven a aparecer.
+    const OPCION_METODOS_CREADOS = 'wcep_metodos_creados';
 
     public static function init() {
         // 25: después de register(), cuando los términos ya se pueden consultar.
@@ -53,13 +61,31 @@ class WCEP_Taxonomy {
 
     // --- Valores de arranque -------------------------------------------------------------------
 
-    // Franjas de entrega listas para usar, por slug de método. Ahorra cargar a mano una tabla de
-    // cuatro filas que además es fácil de equivocar en los bordes (11:59/12:00).
+    // Valores listos para usar, por slug de método. Ahorran cargar a mano una tabla de cuatro filas
+    // que además es fácil de equivocar en los bordes (11:59/12:00), y dejan a Zoom explicando su
+    // cobro a destino desde el primer día.
     private static function valores_predeterminados() {
         return [
+            'pickup' => [
+                // El aviso de "pedido listo" es de Pickup: es el único método donde el cliente tiene
+                // que venir a buscarlo y no se entera de que ya puede hacerlo si nadie le escribe.
+                'avisa_pedido_listo' => '1',
+            ],
+            'zoom' => [
+                'mensaje_adicional' => implode("\n", [
+                    __('Cobro a destino: Pagas al retirar tu paquete.', 'wc-envios-personalizados'),
+                    __('1 a 3 kg: $3', 'wc-envios-personalizados'),
+                    __('Kilo adicional: $1 por kg extra', 'wc-envios-personalizados'),
+                ]),
+            ],
             'delivery' => [
-                'titulo_franjas'      => __('¿Cuándo quieres recibirlo?', 'wc-envios-personalizados'),
-                'franjas'             => [
+                'titulo_franjas'          => __('¿Cuándo quieres recibirlo?', 'wc-envios-personalizados'),
+                // Delivery es el único que cobra tarifa de zona, así que es donde tienen sentido las
+                // dos casillas nuevas: mostrar el monto sin el nombre de la tarifa y aplicar las
+                // reglas por SKU.
+                'ocultar_etiqueta_envio'  => '1',
+                'aplica_tarifas_producto' => '1',
+                'franjas'                 => [
                     // Pedido por la mañana: alcanza para la tarde del mismo día.
                     ['desde' => '00:00', 'hasta' => '11:59', 'offset' => 0, 'inicio' => '15:00', 'fin' => '18:00'],
                     ['desde' => '00:00', 'hasta' => '11:59', 'offset' => 1, 'inicio' => '10:00', 'fin' => '12:00'],
@@ -71,12 +97,109 @@ class WCEP_Taxonomy {
         ];
     }
 
-    public static function sembrar_predeterminados() {
-        if (get_option(self::OPCION_SEMBRADO)) {
+    // Los tres métodos con los que arranca una instalación nueva, con la configuración que hoy tiene
+    // el sitio del cliente. Antes había que crearlos a mano y marcar una por una las casillas de
+    // cada uno; los grupos de horario y las franjas ya venían listos y los métodos no.
+    //
+    // Acá va solo lo que valores_predeterminados() no cubre: al crear el término se aplican las dos
+    // listas juntas, así las franjas, el mensaje de Zoom y el aviso de Pickup viven en un solo lugar.
+    private static function metodos_de_arranque() {
+        return [
+            'pickup' => [
+                'nombre' => 'Pick-up',
+                'metas'  => [
+                    'descripcion'            => __('Retira en nuestra tienda', 'wc-envios-personalizados'),
+                    'orden'                  => 1,
+                    'requiere_sede'          => '1',
+                    'envio_gratis'           => '1',
+                    'mostrar_resumen'        => '1',
+                    'estilo_aviso'           => 'gris',
+                    // Sin prefijo: la frase del grupo ya se lee completa ("Retira a partir de mañana
+                    // a las 3:00 pm"), y así está en el sitio del cliente.
+                    // Sin post_type_sedes: se usa "tiendas" si existe y, si no, el CPT propio.
+                ],
+            ],
+            'delivery' => [
+                'nombre' => 'Delivery',
+                'metas'  => [
+                    'descripcion'           => __('Entregas en Caracas', 'wc-envios-personalizados'),
+                    'orden'                 => 2,
+                    'muestra_datos_entrega' => '1',
+                    // Sin caja de resumen. La caja morada con "Delivery" y una dirección fija se
+                    // retiró a pedido del cliente (10/09/2026): al elegir Delivery se pasa directo
+                    // a "¿Cuándo quieres recibirlo?".
+                    'mostrar_resumen'       => '0',
+                ],
+            ],
+            'zoom' => [
+                'nombre' => 'Zoom',
+                'metas'  => [
+                    'descripcion'      => __('Envíos a todo el país', 'wc-envios-personalizados'),
+                    'orden'            => 3,
+                    'requiere_ciudad'  => '1',
+                    'requiere_sede'    => '1',
+                    'envio_gratis'     => '1',
+                    // Las oficinas de Zoom son cientos y no son tiendas del cliente: van en el CPT
+                    // propio para no mezclarlas con "tiendas".
+                    'post_type_sedes'  => WCEP_Sede_CPT::POST_TYPE,
+                    'placeholder_sede' => __('Escoge sede Zoom', 'wc-envios-personalizados'),
+                    // Sin caja de resumen al elegir la oficina: lo que el cliente necesita saber de
+                    // Zoom es el cobro a destino, y eso ya lo dice el mensaje de arriba.
+                    'mostrar_resumen'  => '0',
+                ],
+            ],
+        ];
+    }
+
+    // Solo en una instalación nueva, con la taxonomía vacía. Si ya hay métodos cargados no se crea
+    // nada: un sitio que llamó "retiro" a su Pickup terminaría con dos tarjetas de lo mismo en el
+    // checkout.
+    private static function crear_metodos_de_arranque() {
+        if (get_option(self::OPCION_METODOS_CREADOS)) {
             return;
         }
 
-        update_option(self::OPCION_SEMBRADO, '1');
+        $existentes = get_terms(['taxonomy' => 'metodo_envio', 'hide_empty' => false, 'fields' => 'ids']);
+
+        // Sin marcar la opción: si la taxonomía todavía no está registrada conviene reintentarlo en
+        // la próxima carga en vez de dar la creación por hecha.
+        if (is_wp_error($existentes)) {
+            return;
+        }
+
+        // La marca va ANTES de crear nada, como en los grupos: si algo falla a mitad de camino, el
+        // intento no se repite en cada carga llenando la lista de métodos duplicados.
+        update_option(self::OPCION_METODOS_CREADOS, '1');
+
+        if ($existentes) {
+            return;
+        }
+
+        $sembrados = self::valores_predeterminados();
+
+        foreach (self::metodos_de_arranque() as $metodo_slug => $metodo) {
+            $creado = wp_insert_term($metodo['nombre'], 'metodo_envio', ['slug' => $metodo_slug]);
+
+            if (is_wp_error($creado)) {
+                continue;
+            }
+
+            $metas = array_merge($sembrados[$metodo_slug] ?? [], $metodo['metas']);
+
+            foreach ($metas as $clave => $valor) {
+                update_term_meta($creado['term_id'], $clave, $valor);
+            }
+        }
+    }
+
+    public static function sembrar_predeterminados() {
+        self::crear_metodos_de_arranque();
+
+        if (get_option(self::OPCION_SEMBRADO) === self::VERSION_SEMBRADO) {
+            return;
+        }
+
+        update_option(self::OPCION_SEMBRADO, self::VERSION_SEMBRADO);
 
         foreach (self::valores_predeterminados() as $metodo_slug => $metas) {
             $termino = get_term_by('slug', $metodo_slug, 'metodo_envio');
@@ -218,6 +341,31 @@ class WCEP_Taxonomy {
                 <p class="description"><?php esc_html_e('Lo que aparece en la línea "Envío" de "Tu pedido". Si lo dejas vacío se usa el nombre del método.', 'wc-envios-personalizados'); ?></p>
             </td>
         </tr>
+        <tr class="form-field">
+            <th><?php esc_html_e('Mostrar solo el monto', 'wc-envios-personalizados'); ?></th>
+            <td>
+                <label><input type="checkbox" name="ocultar_etiqueta_envio" value="1" <?php checked($valores['ocultar_etiqueta_envio'], '1'); ?>> <?php esc_html_e('Sí', 'wc-envios-personalizados'); ?></label>
+                <p class="description"><?php esc_html_e('En la línea "Envío" se muestra el monto sin el nombre de la tarifa ("Ref.5,00" en vez de "Tasa mínima BECO: Ref.5,00"). Solo cambia el checkout: el nombre sigue completo en el admin, los correos y la factura.', 'wc-envios-personalizados'); ?></p>
+            </td>
+        </tr>
+        <tr class="form-field">
+            <th><?php esc_html_e('Aplica tarifas por producto', 'wc-envios-personalizados'); ?></th>
+            <td>
+                <label><input type="checkbox" name="aplica_tarifas_producto" value="1" <?php checked($valores['aplica_tarifas_producto'], '1'); ?>> <?php esc_html_e('Sí', 'wc-envios-personalizados'); ?></label>
+                <p class="description">
+                    <?php esc_html_e('Habilita las reglas por SKU: los productos voluminosos pagan un monto fijo y los que se acuerdan por WhatsApp no cobran envío. Las listas se cargan en Sedes de envío → Tarifas de delivery.', 'wc-envios-personalizados'); ?>
+                </p>
+            </td>
+        </tr>
+        <tr class="form-field">
+            <th><?php esc_html_e('Avisar cuando el pedido esté listo', 'wc-envios-personalizados'); ?></th>
+            <td>
+                <label><input type="checkbox" name="avisa_pedido_listo" value="1" <?php checked($valores['avisa_pedido_listo'], '1'); ?>> <?php esc_html_e('Sí', 'wc-envios-personalizados'); ?></label>
+                <p class="description">
+                    <?php esc_html_e('Al pasar el pedido al estado "Pedido listo" se le envía un correo al cliente diciéndole que ya puede retirarlo, con los datos de la sede que eligió. Márcalo en Pickup: es el único método donde el cliente tiene que venir a buscarlo. El texto del correo se edita en WooCommerce → Ajustes → Correos electrónicos.', 'wc-envios-personalizados'); ?>
+                </p>
+            </td>
+        </tr>
 
         <tr>
             <th colspan="2"><h2><?php esc_html_e('Caja de resumen', 'wc-envios-personalizados'); ?></h2></th>
@@ -248,6 +396,21 @@ class WCEP_Taxonomy {
         <tr class="form-field">
             <th><label for="aviso_direccion"><?php esc_html_e('Dirección de la caja', 'wc-envios-personalizados'); ?></label></th>
             <td><input type="text" name="aviso_direccion" id="aviso_direccion" value="<?php echo esc_attr($valores['aviso_direccion']); ?>" class="large-text"></td>
+        </tr>
+        <tr>
+            <th colspan="2"><h2><?php esc_html_e('Mensaje del método', 'wc-envios-personalizados'); ?></h2></th>
+        </tr>
+        <tr class="form-field">
+            <th><label for="mensaje_adicional"><?php esc_html_e('Texto', 'wc-envios-personalizados'); ?></label></th>
+            <td>
+                <textarea name="mensaje_adicional" id="mensaje_adicional" rows="5" class="large-text"><?php echo esc_textarea($valores['mensaje_adicional']); ?></textarea>
+                <p class="description">
+                    <?php esc_html_e('Aviso que se muestra al elegir la tarjeta, para explicar cómo funciona el envío de ese método (por ejemplo el cobro a destino de Zoom y sus montos por kilo). Se respetan los saltos de línea. Vacío, no se muestra nada.', 'wc-envios-personalizados'); ?>
+                </p>
+                <p class="description">
+                    <?php esc_html_e('A diferencia del título y la dirección de arriba, este funciona en todos los métodos, elijan sede o no.', 'wc-envios-personalizados'); ?>
+                </p>
+            </td>
         </tr>
 
         <tr>
@@ -385,27 +548,31 @@ class WCEP_Taxonomy {
     // Un solo lugar donde vive la lista de metas y sus valores por defecto.
     public static function leer_metas($termino_id) {
         return [
-            'descripcion'            => get_term_meta($termino_id, 'descripcion', true),
-            'orden'                  => (int) get_term_meta($termino_id, 'orden', true),
-            'requiere_ciudad'        => get_term_meta($termino_id, 'requiere_ciudad', true),
-            'requiere_sede'          => get_term_meta($termino_id, 'requiere_sede', true),
-            'muestra_datos_entrega'  => get_term_meta($termino_id, 'muestra_datos_entrega', true),
-            'predeterminado'         => get_term_meta($termino_id, 'predeterminado', true),
-            'placeholder_sede'       => get_term_meta($termino_id, 'placeholder_sede', true),
-            'post_type_sedes'        => WCEP_Sede_CPT::post_type_de_termino($termino_id),
-            'mostrar_resumen'        => get_term_meta($termino_id, 'mostrar_resumen', true),
-            'envio_gratis'           => get_term_meta($termino_id, 'envio_gratis', true),
-            'etiqueta_envio'         => get_term_meta($termino_id, 'etiqueta_envio', true),
-            'estilo_aviso'           => get_term_meta($termino_id, 'estilo_aviso', true) ?: 'morado',
-            'aviso_titulo'           => get_term_meta($termino_id, 'aviso_titulo', true),
-            'aviso_direccion'        => get_term_meta($termino_id, 'aviso_direccion', true),
-            'icono'                  => get_term_meta($termino_id, 'icono', true),
-            'icono_activo'           => get_term_meta($termino_id, 'icono_activo', true),
-            'ilustracion'            => get_term_meta($termino_id, 'ilustracion', true),
-            'prefijo_disponibilidad' => get_term_meta($termino_id, 'prefijo_disponibilidad', true),
-            'nota_disponibilidad'    => get_term_meta($termino_id, 'nota_disponibilidad', true),
-            'titulo_franjas'         => get_term_meta($termino_id, 'titulo_franjas', true),
-            'franjas'                => self::leer_franjas($termino_id),
+            'descripcion'             => get_term_meta($termino_id, 'descripcion', true),
+            'orden'                   => (int) get_term_meta($termino_id, 'orden', true),
+            'requiere_ciudad'         => get_term_meta($termino_id, 'requiere_ciudad', true),
+            'requiere_sede'           => get_term_meta($termino_id, 'requiere_sede', true),
+            'muestra_datos_entrega'   => get_term_meta($termino_id, 'muestra_datos_entrega', true),
+            'predeterminado'          => get_term_meta($termino_id, 'predeterminado', true),
+            'placeholder_sede'        => get_term_meta($termino_id, 'placeholder_sede', true),
+            'post_type_sedes'         => WCEP_Sede_CPT::post_type_de_termino($termino_id),
+            'mostrar_resumen'         => get_term_meta($termino_id, 'mostrar_resumen', true),
+            'envio_gratis'            => get_term_meta($termino_id, 'envio_gratis', true),
+            'etiqueta_envio'          => get_term_meta($termino_id, 'etiqueta_envio', true),
+            'ocultar_etiqueta_envio'  => get_term_meta($termino_id, 'ocultar_etiqueta_envio', true),
+            'aplica_tarifas_producto' => get_term_meta($termino_id, 'aplica_tarifas_producto', true),
+            'avisa_pedido_listo'      => get_term_meta($termino_id, 'avisa_pedido_listo', true),
+            'estilo_aviso'            => get_term_meta($termino_id, 'estilo_aviso', true) ?: 'morado',
+            'aviso_titulo'            => get_term_meta($termino_id, 'aviso_titulo', true),
+            'aviso_direccion'         => get_term_meta($termino_id, 'aviso_direccion', true),
+            'mensaje_adicional'       => get_term_meta($termino_id, 'mensaje_adicional', true),
+            'icono'                   => get_term_meta($termino_id, 'icono', true),
+            'icono_activo'            => get_term_meta($termino_id, 'icono_activo', true),
+            'ilustracion'             => get_term_meta($termino_id, 'ilustracion', true),
+            'prefijo_disponibilidad'  => get_term_meta($termino_id, 'prefijo_disponibilidad', true),
+            'nota_disponibilidad'     => get_term_meta($termino_id, 'nota_disponibilidad', true),
+            'titulo_franjas'          => get_term_meta($termino_id, 'titulo_franjas', true),
+            'franjas'                 => self::leer_franjas($termino_id),
         ];
     }
 
@@ -425,12 +592,19 @@ class WCEP_Taxonomy {
             update_term_meta($termino_id, $campo, sanitize_text_field(wp_unslash($_POST[$campo] ?? '')));
         }
 
+        // Aparte de los textos de una línea: sanitize_text_field() se come los saltos de línea, y el
+        // mensaje del método son varias líneas ("1 a 3 kg: $3" debajo de "Cobro a destino:").
+        update_term_meta($termino_id, 'mensaje_adicional', sanitize_textarea_field(wp_unslash($_POST['mensaje_adicional'] ?? '')));
+
         $urls = ['icono', 'icono_activo', 'ilustracion'];
         foreach ($urls as $campo) {
             update_term_meta($termino_id, $campo, esc_url_raw(wp_unslash($_POST[$campo] ?? '')));
         }
 
-        $casillas = ['requiere_ciudad', 'requiere_sede', 'muestra_datos_entrega', 'mostrar_resumen', 'envio_gratis'];
+        $casillas = [
+            'requiere_ciudad', 'requiere_sede', 'muestra_datos_entrega', 'mostrar_resumen',
+            'envio_gratis', 'ocultar_etiqueta_envio', 'aplica_tarifas_producto', 'avisa_pedido_listo',
+        ];
         foreach ($casillas as $campo) {
             update_term_meta($termino_id, $campo, isset($_POST[$campo]) ? '1' : '0');
         }

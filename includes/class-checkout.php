@@ -17,8 +17,8 @@ class WCEP_Checkout {
     // Shortcode para colocar el selector donde el usuario quiera dentro de la plantilla del checkout.
     const SHORTCODE = 'wcep_envio';
 
-    // Lo prometido al cliente, congelado en el pedido. Sirve igual para Pickup ("Retira el Viernes
-    // 11 de Septiembre…") y para Delivery ("Mañana de 3:00 pm a 6:00 pm").
+    // Lo prometido al cliente, congelado en el pedido. Sirve igual para Pickup ("Retira a partir del
+    // Viernes 11 de Septiembre…") y para Delivery ("Mañana de 3:00 pm a 6:00 pm").
     const META_ENTREGA_TEXTO = '_wcep_entrega_texto';
     const META_ENTREGA_FECHA = '_wcep_entrega_fecha';
 
@@ -150,6 +150,7 @@ class WCEP_Checkout {
             'estilo_aviso'           => $valores['estilo_aviso'],
             'aviso_titulo'           => $valores['aviso_titulo'],
             'aviso_direccion'        => $valores['aviso_direccion'],
+            'mensaje_adicional'      => $valores['mensaje_adicional'],
             'mostrar_resumen'        => $valores['mostrar_resumen'] === '1',
             'prefijo_disponibilidad' => $valores['prefijo_disponibilidad'],
             'nota_disponibilidad'    => $valores['nota_disponibilidad'],

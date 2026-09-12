@@ -2,7 +2,7 @@
 /**
  * Plugin Name: WC Envíos Personalizados
  * Description: Selector de método de envío en tarjetas (Pickup / Delivery / Zoom) para el checkout de WooCommerce, usando el CPT "tiendas" como fuente de sedes.
- * Version: 1.14.2
+ * Version: 1.16.5
  * Author: Kromaticos
  * Author URI: https://kromaticos.com
  * Text Domain: wc-envios-personalizados
@@ -13,7 +13,7 @@ if (!defined('ABSPATH')) exit;
 
 define('WCEP_PATH', plugin_dir_path(__FILE__));
 define('WCEP_URL', plugin_dir_url(__FILE__));
-define('WCEP_VERSION', '1.14.2');
+define('WCEP_VERSION', '1.16.5');
 
 require_once WCEP_PATH . 'includes/class-activator.php';
 require_once WCEP_PATH . 'includes/class-deactivator.php';
@@ -38,7 +38,9 @@ function wcep_bootstrap() {
     require_once WCEP_PATH . 'includes/class-ajax.php';
     require_once WCEP_PATH . 'includes/class-checkout.php';
     require_once WCEP_PATH . 'includes/class-datos-entrega.php';
+    require_once WCEP_PATH . 'includes/class-tarifas-producto.php';
     require_once WCEP_PATH . 'includes/class-shipping.php';
+    require_once WCEP_PATH . 'includes/class-pedido-listo.php';
     require_once WCEP_PATH . 'includes/class-diagnostico.php';
 
     WCEP_Sede_CPT::init();
@@ -49,7 +51,9 @@ function wcep_bootstrap() {
     WCEP_Ajax::init();
     WCEP_Checkout::init();
     WCEP_Datos_Entrega::init();
+    WCEP_Tarifas_Producto::init();
     WCEP_Shipping::init();
+    WCEP_Pedido_Listo::init();
     WCEP_Diagnostico::init();
 
     // El flush de rewrite rules solo tiene sentido una vez que todos los post types y taxonomías
@@ -64,6 +68,7 @@ function wcep_bootstrap() {
     // Va colgada de "init" y no del chequeo de versión: si un día no puede completarse (taxonomía
     // todavía no registrada), así se reintenta en la próxima carga en vez de quedar por hecha.
     add_action('init', 'wcep_limpiar_nota_feriados', 100);
+    add_action('init', 'wcep_actualizar_frase_retiro', 100);
 }
 
 // Solo avisa si algún método está configurado para sacar sus sedes de "tiendas" y ese CPT no
@@ -143,4 +148,40 @@ function wcep_limpiar_nota_feriados() {
     }
 
     update_option('wcep_nota_feriados_limpiada', '1');
+}
+
+// "Retira el Viernes 11 de Septiembre" se leía como una cita: mucha gente entendía que tenía que ir
+// ese día y no otro. La frase pasó a "Retira a partir del…", pero cambiar el valor sembrado no
+// alcanza, porque en los sitios que ya andan quedó guardada en el grupo de horario.
+//
+// Se reescribe una sola vez y solo si el texto es exactamente el que sembró el plugin: si alguien lo
+// redactó a mano, es suyo y no se toca.
+function wcep_actualizar_frase_retiro() {
+    if (get_option('wcep_frase_retiro_actualizada')) {
+        return;
+    }
+
+    $terminos = get_terms(['taxonomy' => WCEP_Grupo_Horario::TAXONOMIA, 'hide_empty' => false]);
+
+    // Sin marcar la opción: si la taxonomía todavía no está registrada conviene reintentarlo en la
+    // próxima carga en vez de dar el cambio por hecho.
+    if (is_wp_error($terminos)) {
+        return;
+    }
+
+    // Igual que con la nota de feriados: lo guardado puede ser la traducción y no el original.
+    $plantillas_viejas = array_unique([
+        'Retira el {fecha}, a partir de las {hora}',
+        __('Retira el {fecha}, a partir de las {hora}', 'wc-envios-personalizados'),
+    ]);
+
+    $plantilla_nueva = __('Retira a partir del {fecha}, desde las {hora}', 'wc-envios-personalizados');
+
+    foreach ($terminos as $termino) {
+        if (in_array(get_term_meta($termino->term_id, 'plantilla', true), $plantillas_viejas, true)) {
+            update_term_meta($termino->term_id, 'plantilla', $plantilla_nueva);
+        }
+    }
+
+    update_option('wcep_frase_retiro_actualizada', '1');
 }

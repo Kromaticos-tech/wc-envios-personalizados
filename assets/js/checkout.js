@@ -169,10 +169,15 @@ jQuery(function ($) {
                     direccion: metodo.aviso_direccion
                 }));
             }
+            $panelDetalle.append(cajaMensaje(metodo));
             agregarFranjas(metodo);
             return;
         }
 
+        // En los métodos con sede el mensaje va arriba de todo y no dentro de la caja de resumen:
+        // esa caja aparece recién al elegir tienda, y lo que explica el mensaje —cómo se cobra el
+        // envío— es justamente lo que el cliente necesita saber ANTES de ponerse a elegir.
+        $panelDetalle.append(cajaMensaje(metodo));
         $panelDetalle.append(titulo(textos.tituloTienda || 'Selecciona tienda'));
 
         if (metodo.requiere_ciudad) {
@@ -496,6 +501,44 @@ jQuery(function ($) {
     $(document).on('change', 'input[name="wcep_franja_opcion"]', function () {
         guardarCampoOculto('wcep_franja', $(this).val());
     });
+
+    // Aviso propio del método: cómo se cobra ese envío ("Cobro a destino: pagas al retirar tu
+    // paquete", con los montos por kilo de Zoom). Es texto libre cargado en el admin.
+    //
+    // Los saltos de línea los resuelve el CSS (white-space: pre-line) y no un replace por <br>: el
+    // texto sigue pasando entero por el escapado, así que un "<" escrito en el admin se ve como "<"
+    // y no abre una etiqueta.
+    function cajaMensaje(metodo) {
+        if (!metodo.mensaje_adicional) return '';
+
+        // Las mismas dos imágenes que la caja de resumen y en el mismo lugar —avatar a la
+        // izquierda, ilustración a la derecha—, y no unas propias: las dos cajas del panel se leen
+        // como parte de la misma pieza en vez de una con dibujos y la otra con un bloque de texto
+        // suelto. El CSS ya achica la ilustración y la esconde en pantallas angostas.
+        const ilustracion = metodo.ilustracion;
+
+        // La primera línea hace de título y va en negrita, como el nombre de la sede en la caja de
+        // resumen. Se separa acá y no con un campo aparte en el admin: quien escribe el aviso ya
+        // arranca con la frase que resume el cobro y después detalla, y así no hay que llenar dos
+        // campos para conseguir eso. Un mensaje de una sola línea no lleva título: quedaría un
+        // encabezado sin nada debajo.
+        const lineas = metodo.mensaje_adicional.split(/\r?\n/);
+        const titulo = lineas.length > 1 ? lineas.shift() : '';
+        const cuerpo = lineas.join('\n');
+
+        return '<div class="wcep-caja-mensaje">' +
+            '<div class="flex items-center justify-between gap-3">' +
+                '<div class="flex items-center gap-3">' +
+                    (WCEP.iconoSedeAvatar ? '<img src="' + escaparHtml(WCEP.iconoSedeAvatar) + '" class="wcep-aviso-avatar" alt="">' : '') +
+                    '<div>' +
+                        (titulo ? '<p class="wcep-mensaje-titulo">' + escaparHtml(titulo) + '</p>' : '') +
+                        '<p class="wcep-mensaje-texto">' + escaparHtml(cuerpo) + '</p>' +
+                    '</div>' +
+                '</div>' +
+                (ilustracion ? '<img src="' + escaparHtml(ilustracion) + '" class="wcep-aviso-ilustracion" alt="">' : '') +
+            '</div>' +
+        '</div>';
+    }
 
     function cajaCosto(textoCosto) {
         return '<div class="wcep-caja-costo">' +

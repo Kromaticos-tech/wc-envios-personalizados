@@ -43,6 +43,25 @@ class WCEP_Diagnostico {
                             <?php endif; ?>
                         </td>
                     </tr>
+                    <tr>
+                        <td><?php esc_html_e('Aviso de "pedido listo"', 'wc-envios-personalizados'); ?></td>
+                        <td>
+                            <?php
+                            $metodos_que_avisan = WCEP_Pedido_Listo::metodos_que_avisan();
+                            self::estado(WCEP_Pedido_Listo::correo_activo() && $metodos_que_avisan);
+                            ?>
+                            <?php if (!WCEP_Pedido_Listo::correo_activo()) : ?>
+                                <br><small><?php esc_html_e('El correo está desactivado en WooCommerce → Ajustes → Correos electrónicos → "Pedido listo para retirar".', 'wc-envios-personalizados'); ?></small>
+                            <?php elseif (!$metodos_que_avisan) : ?>
+                                <br><small><?php esc_html_e('Ningún método tiene marcado "Avisar cuando el pedido esté listo", así que marcar el estado no envía nada. Se marca en Pickup.', 'wc-envios-personalizados'); ?></small>
+                            <?php else : ?>
+                                <br><small><?php
+                                    /* translators: %s: lista de métodos separados por coma. */
+                                    printf(esc_html__('Avisan: %s', 'wc-envios-personalizados'), esc_html(implode(', ', $metodos_que_avisan)));
+                                ?></small>
+                            <?php endif; ?>
+                        </td>
+                    </tr>
                     <tr><td><?php esc_html_e('Versión del plugin', 'wc-envios-personalizados'); ?></td><td><?php echo esc_html(WCEP_VERSION); ?> (<?php echo esc_html__('guardada:', 'wc-envios-personalizados'); ?> <?php echo esc_html(get_option('wcep_version', '—')); ?>)</td></tr>
                 </tbody>
             </table>
@@ -114,6 +133,35 @@ class WCEP_Diagnostico {
             : '<span style="color:#8c8f94">' . esc_html__('No', 'wc-envios-personalizados') . '</span>';
     }
 
+    // Resume en una celda de dónde sale el costo de ese método. Cuando hay reglas por SKU se dice
+    // cuántos hay cargados: una lista vacía es la explicación más probable de "configuré la tarifa
+    // especial y sigue cobrando lo mismo".
+    private static function estado_envio($termino, $envio_gratis, $etiqueta_envio) {
+        if ($envio_gratis) {
+            return __('Gratis', 'wc-envios-personalizados') . ' — ' . $etiqueta_envio;
+        }
+
+        $partes = [__('Tarifa de la zona', 'wc-envios-personalizados')];
+
+        if (get_term_meta($termino->term_id, 'aplica_tarifas_producto', true) === '1') {
+            $partes[] = sprintf(
+                // translators: 1: monto especial, 2: SKUs con tarifa especial, 3: SKUs a convenir por WhatsApp.
+                __('tarifas por SKU (especial %1$s: %2$d SKU / WhatsApp: %3$d SKU)', 'wc-envios-personalizados'),
+                // Número pelado y no wc_price(): esta celda se imprime escapada, y el HTML del
+                // formateador de moneda se vería literal.
+                wc_format_localized_price(WCEP_Tarifas_Producto::monto_especial()),
+                count(WCEP_Tarifas_Producto::skus(WCEP_Tarifas_Producto::OPCION_SKUS_ESPECIAL)),
+                count(WCEP_Tarifas_Producto::skus(WCEP_Tarifas_Producto::OPCION_SKUS_WHATSAPP))
+            );
+        }
+
+        if (get_term_meta($termino->term_id, 'ocultar_etiqueta_envio', true) === '1') {
+            $partes[] = __('en el checkout se muestra solo el monto', 'wc-envios-personalizados');
+        }
+
+        return implode(' · ', $partes);
+    }
+
     private static function tabla_metodos() {
         if (!taxonomy_exists('metodo_envio')) {
             echo '<p>' . esc_html__('La taxonomía aún no está registrada (revisa que WooCommerce y el CPT tiendas estén activos).', 'wc-envios-personalizados') . '</p>';
@@ -182,6 +230,7 @@ class WCEP_Diagnostico {
                     $envio_gratis    = get_term_meta($termino->term_id, 'envio_gratis', true) === '1';
                     $etiqueta_envio  = get_term_meta($termino->term_id, 'etiqueta_envio', true) ?: $termino->name;
                     $titulo_caja     = get_term_meta($termino->term_id, 'aviso_titulo', true);
+                    $estado_envio    = self::estado_envio($termino, $envio_gratis, $etiqueta_envio);
 
                     // La caja se alimenta de la sede elegida o, si el método no usa sede, de los
                     // campos del propio término. Ese segundo caso es el que se olvida llenar.
@@ -204,9 +253,7 @@ class WCEP_Diagnostico {
                         <td><?php self::si_no($requiere_ciudad); ?></td>
                         <td><?php self::si_no($requiere_sede); ?></td>
                         <td><?php echo esc_html($icono_en_uso); ?></td>
-                        <td><?php echo $envio_gratis
-                            ? esc_html__('Gratis', 'wc-envios-personalizados') . ' — ' . esc_html($etiqueta_envio)
-                            : esc_html__('Tarifa de la zona', 'wc-envios-personalizados'); ?></td>
+                        <td><?php echo esc_html($estado_envio); ?></td>
                         <td><?php echo $estado_resumen; ?></td>
                         <td><?php echo (int) $consulta_sedes_activas->found_posts; ?></td>
                     </tr>

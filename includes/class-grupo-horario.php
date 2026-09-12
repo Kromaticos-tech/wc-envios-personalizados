@@ -87,7 +87,10 @@ class WCEP_Grupo_Horario {
                     'hora'          => '12:00',
                     'dia_objetivo'  => 5,
                     'dias_alcanzan' => [1, 2],
-                    'plantilla'     => __('Retira el {fecha}, a partir de las {hora}', 'wc-envios-personalizados'),
+                    // "Retira el viernes" se leía como una cita a la que hay que ir ese día. La
+                    // tienda guarda el pedido, así que la frase tiene que dejar claro que el viernes
+                    // es cuándo empieza a estar disponible y no el único día para buscarlo.
+                    'plantilla'     => __('Retira a partir del {fecha}, desde las {hora}', 'wc-envios-personalizados'),
                     'relativo'      => '0',
                 ],
             ],
