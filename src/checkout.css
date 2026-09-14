@@ -317,7 +317,7 @@
     color: #374151 !important;
 }
 
-/* "Apartamento, Casa, Unidad, Etc" va sin etiqueta en el diseño: solo placeholder. */
+/* "Punto de referencia" va sin etiqueta en el diseño: solo placeholder. */
 .wcep-campo-entrega label:empty {
     display: none;
 }

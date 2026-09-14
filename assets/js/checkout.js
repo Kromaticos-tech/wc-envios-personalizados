@@ -130,6 +130,44 @@ jQuery(function ($) {
         });
     }
 
+    // --- Altura estable mientras se repinta -----------------------------------------------------
+    // Al cambiar de tarjeta el panel se vacía y se vuelve a llenar a medida que responden los AJAX
+    // (ciudades, sedes, franjas) y WooCommerce recalcula el resumen. En ese hueco la página queda
+    // más corta, y si el cliente estaba scrolleado el navegador recorta el scroll: la página "sube
+    // sola". Se congela la altura del selector hasta que todo terminó de pintarse.
+    let bloqueoAlturaActual = 0;
+
+    function congelarAltura() {
+        const bloqueo = ++bloqueoAlturaActual;
+        const alto    = $selectorEnvio.css('box-sizing') === 'border-box'
+            ? $selectorEnvio.outerHeight()
+            : $selectorEnvio.height();
+
+        $selectorEnvio.css('min-height', alto + 'px');
+
+        function liberar() {
+            // Un clic posterior ya tomó el control de la altura: no se le suelta a medias.
+            if (bloqueo !== bloqueoAlturaActual) return;
+            $selectorEnvio.css('min-height', '');
+        }
+
+        // Por si algún AJAX se cuelga: la altura nunca queda congelada para siempre.
+        window.setTimeout(liberar, 10000);
+
+        return function liberarAlTerminar(cargas) {
+            $.when.apply($, cargas).always(function () {
+                // Un frame de margen para que lo pintado por los callbacks ya tenga su alto real.
+                window.requestAnimationFrame(liberar);
+            });
+        };
+    }
+
+    function esperarActualizacionCheckout() {
+        const actualizado = $.Deferred();
+        $(document.body).one('updated_checkout', function () { actualizado.resolve(); });
+        return actualizado.promise();
+    }
+
     $contenedorTarjetas.on('click', '.wcep-card', function () {
         const $tarjetaElegida = $(this);
 
@@ -140,11 +178,17 @@ jQuery(function ($) {
         const metodoElegido = buscarMetodoPorSlug(slugElegido);
         if (!metodoElegido) return;
 
+        const liberarAltura = congelarAltura();
+
         pintarIconos(slugElegido);
         guardarCampoOculto('wcep_metodo_envio', slugElegido);
-        renderDetalle(metodoElegido);
+        const cargas = renderDetalle(metodoElegido);
         aplicarDatosEntrega(metodoElegido);
+
+        cargas.push(esperarActualizacionCheckout());
         $(document.body).trigger('update_checkout'); // fuerza a WooCommerce a recalcular el costo de envío ya
+
+        liberarAltura(cargas);
     });
 
     function buscarMetodoPorSlug(slug) {
@@ -153,6 +197,7 @@ jQuery(function ($) {
         });
     }
 
+    // Devuelve los AJAX que siguen pintando el panel, para saber cuándo quedó completo.
     function renderDetalle(metodo) {
         $panelDetalle.empty();
         guardarCampoOculto('wcep_sede_id', '');
@@ -170,8 +215,7 @@ jQuery(function ($) {
                 }));
             }
             $panelDetalle.append(cajaMensaje(metodo));
-            agregarFranjas(metodo);
-            return;
+            return [agregarFranjas(metodo)];
         }
 
         // En los métodos con sede el mensaje va arriba de todo y no dentro de la caja de resumen:
@@ -185,16 +229,15 @@ jQuery(function ($) {
         }
         $panelDetalle.append('<select class="wcep-sede wcep-select"></select>');
         $panelDetalle.append('<div class="wcep-aviso"></div>');
-        agregarFranjas(metodo);
+        const cargaFranjas = agregarFranjas(metodo);
 
         if (metodo.requiere_ciudad) {
             // Las sedes se cargan recién cuando hay una ciudad elegida, para no listar todo el país.
             reiniciarSelect($panelDetalle.find('.wcep-sede'), placeholderSede(metodo), true);
-            cargarCiudades(metodo.slug);
-            return;
+            return [cargaFranjas, cargarCiudades(metodo.slug)];
         }
 
-        cargarSedes(metodo.slug, '');
+        return [cargaFranjas, cargarSedes(metodo.slug, '')];
     }
 
     // Las franjas no dependen de la sede, así que el bloque se agrega al pintar el detalle y no
@@ -203,7 +246,7 @@ jQuery(function ($) {
         if (!metodo.tiene_franjas) return;
 
         $panelDetalle.append('<div class="wcep-franjas"></div>');
-        cargarFranjas(metodo);
+        return cargarFranjas(metodo);
     }
 
     function placeholderSede(metodo) {
@@ -381,15 +424,17 @@ jQuery(function ($) {
         const ciudadFiltro = $(this).val();
         if (!metodo) return;
 
-        $panelDetalle.find('.wcep-aviso').empty();
-
         if (!ciudadFiltro) {
+            $panelDetalle.find('.wcep-aviso').empty();
             reiniciarSelect($panelDetalle.find('.wcep-sede'), placeholderSede(metodo), true);
             guardarCampoOculto('wcep_sede_id', '');
             return;
         }
 
-        cargarSedes(metodo.slug, ciudadFiltro);
+        // Vaciar el aviso de la sede anterior achica el panel hasta que llegan las nuevas sedes.
+        const liberarAltura = congelarAltura();
+        $panelDetalle.find('.wcep-aviso').empty();
+        liberarAltura([cargarSedes(metodo.slug, ciudadFiltro)]);
     });
 
     $(document).on('change', '.wcep-sede', function () {
@@ -471,7 +516,7 @@ jQuery(function ($) {
         const $bloque = $panelDetalle.find('.wcep-franjas');
         if (!$bloque.length) return;
 
-        $.post(WCEP.ajaxUrl, {
+        return $.post(WCEP.ajaxUrl, {
             action: 'wcep_get_franjas',
             nonce: WCEP.nonce,
             metodo: metodo.slug
@@ -556,7 +601,7 @@ jQuery(function ($) {
 
         reiniciarSelect($selectCiudad, placeholder, true);
 
-        $.post(WCEP.ajaxUrl, {
+        return $.post(WCEP.ajaxUrl, {
             action: 'wcep_get_ciudades',
             nonce: WCEP.nonce,
             metodo: metodoSlug
@@ -574,7 +619,7 @@ jQuery(function ($) {
     }
 
     function cargarSedes(metodoSlug, ciudadFiltro) {
-        $.post(WCEP.ajaxUrl, {
+        return $.post(WCEP.ajaxUrl, {
             action: 'wcep_get_sedes',
             nonce: WCEP.nonce,
             metodo: metodoSlug,

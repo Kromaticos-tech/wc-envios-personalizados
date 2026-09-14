@@ -130,12 +130,12 @@ class WCEP_Datos_Entrega {
         return [
             'shipping_address_1' => [
                 'label'       => __('Dirección', 'wc-envios-personalizados'),
-                'placeholder' => __('Casa, Número de casa o nombre de la calle', 'wc-envios-personalizados'),
+                'placeholder' => __('Municipio, avenida, calle, edificio', 'wc-envios-personalizados'),
                 'required'    => true,
             ],
             'shipping_address_2' => [
                 'label'       => '', // el diseño no muestra etiqueta en este campo
-                'placeholder' => __('Apartamento, Casa, Unidad, Etc', 'wc-envios-personalizados'),
+                'placeholder' => __('Punto de referencia', 'wc-envios-personalizados'),
                 'required'    => false,
             ],
             'shipping_first_name' => [
