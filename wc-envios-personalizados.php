@@ -2,7 +2,7 @@
 /**
  * Plugin Name: WC Envíos Personalizados
  * Description: Selector de método de envío en tarjetas (Pickup / Delivery / Zoom) para el checkout de WooCommerce, usando el CPT "tiendas" como fuente de sedes.
- * Version: 1.16.7
+ * Version: 1.16.8
  * Author: Kromaticos
  * Author URI: https://kromaticos.com
  * Text Domain: wc-envios-personalizados
@@ -13,7 +13,7 @@ if (!defined('ABSPATH')) exit;
 
 define('WCEP_PATH', plugin_dir_path(__FILE__));
 define('WCEP_URL', plugin_dir_url(__FILE__));
-define('WCEP_VERSION', '1.16.7');
+define('WCEP_VERSION', '1.16.8');
 
 require_once WCEP_PATH . 'includes/class-activator.php';
 require_once WCEP_PATH . 'includes/class-deactivator.php';

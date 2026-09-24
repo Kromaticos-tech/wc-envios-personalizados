@@ -38,7 +38,7 @@ class WCEP_Datos_Entrega {
     public static function init() {
         // Sin esto WooCommerce ignora los shipping_* y copia la dirección de facturación.
         add_filter('woocommerce_ship_to_different_address_checked', '__return_true');
-        add_filter('woocommerce_checkout_posted_data', [__CLASS__, 'forzar_envio_separado']);
+        add_action('woocommerce_checkout_process', [__CLASS__, 'forzar_envio_separado'], 1);
 
         add_filter('woocommerce_checkout_fields', [__CLASS__, 'configurar_campos'], 20);
         add_action('woocommerce_checkout_create_order', [__CLASS__, 'completar_direccion'], 5);
@@ -93,11 +93,13 @@ class WCEP_Datos_Entrega {
         self::$campos_ya_renderizados = true;
     }
 
-    // Red de seguridad: si el tema quitó la casilla "Enviar a una dirección diferente",
-    // el POST no la trae y WooCommerce descartaría todo lo que escribió el cliente.
-    public static function forzar_envio_separado($datos_enviados) {
-        $datos_enviados['ship_to_different_address'] = true;
-        return $datos_enviados;
+    // La plantilla no incluye la casilla "Enviar a una dirección diferente", así que el POST no la
+    // trae. Sin ella, get_posted_data() salta el grupo shipping y lo rellena con los datos de
+    // facturación: se pierde todo lo que el cliente escribió en "Datos de entrega".
+    // Tiene que marcarse en $_POST ANTES de get_posted_data(); el filtro woocommerce_checkout_posted_data
+    // llega tarde porque corre cuando la copia desde facturación ya se hizo.
+    public static function forzar_envio_separado() {
+        $_POST['ship_to_different_address'] = 1;
     }
 
     // El método elegido en esta petición. Se prefiere el POST (más fresco durante la validación)
