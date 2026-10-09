@@ -56,8 +56,8 @@ grupos de horario:
 | Método | Configuración de arranque |
 |---|---|
 | **Pick-up** (orden 1) | "Retira en nuestra tienda". Requiere sede (de `tiendas` si existe), no cobra envío, caja de resumen gris con la fecha de retiro, avisa cuando el pedido está listo |
-| **Delivery** (orden 2) | "Entregas en Caracas". Pide dirección de entrega, **sin caja de resumen**, muestra solo el monto, aplica tarifas por producto y trae las cuatro franjas estándar |
-| **Zoom** (orden 3) | "Envíos a todo el país". Requiere ciudad y sede (del CPT propio «Sedes de envío»), no cobra envío, sin caja de resumen, mensaje de cobro a destino |
+| **Delivery** (orden 2) | "Entregas en Caracas". Pide dirección de entrega, **sin caja de resumen**, muestra solo el monto, aplica tarifas por producto, envío gratis desde $120 (gana sobre las tarifas por producto) y trae las cuatro franjas estándar |
+| **Zoom** (orden 3) | "Envíos a todo el país". Requiere ciudad y sede (del CPT propio «Sedes de envío»), cobra un monto fijo de $5 (traslado a la agencia) con las mismas tarifas por producto que Delivery, envío gratis desde $120, sin caja de resumen, mensaje de cobro a destino cargado pero oculto |
 
 Solo se crean si la taxonomía está vacía, y una sola vez: en un sitio que ya tiene métodos cargados
 no se agrega ni se pisa nada, y si se borran no vuelven a aparecer. Después se editan como cualquier
@@ -193,7 +193,7 @@ hoy.
 | `_wcep_sede_id` | ID de la sede, si el método usa sedes |
 | `_wcep_entrega_texto` | La frase que vio el cliente: *"Retira a partir del Viernes 11 de Septiembre, desde las 12:00 pm"* o *"Mañana de 3:00 pm a 6:00 pm"* |
 | `_wcep_entrega_fecha` | La misma fecha en `AAAA-MM-DD`, para ordenar y filtrar pedidos por día de entrega |
-| `_wcep_delivery_tarifa` | Con qué regla se cobró el envío: `estandar`, `especial` o `whatsapp`. Los `whatsapp` salen con envío en 0 y se avisan en el admin y en el correo del administrador |
+| `_wcep_delivery_tarifa` | Con qué regla se cobró el envío: `estandar`, `especial`, `whatsapp` o `gratis_monto` (llegó al mínimo de compra y no pagó envío). Los `whatsapp` salen con envío en 0 y se avisan en el admin y en el correo del administrador |
 
 Se guardan **al crear el pedido** y no se recalculan después. Es a propósito: cambiar la regla de un
 grupo o la tabla de franjas no debe alterar lo que se le prometió a un pedido ya hecho.

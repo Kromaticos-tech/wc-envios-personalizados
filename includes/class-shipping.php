@@ -4,16 +4,20 @@ if (!defined('ABSPATH')) exit;
 // Conecta la tarjeta elegida por el cliente con el cálculo real de envío de WooCommerce.
 //
 // Los métodos marcados como "no cobra envío" reemplazan las tarifas de la zona por una de coste 0
-// (Pickup porque el cliente retira, Zoom porque le paga al transportista en destino). Los que
-// aplican tarifas por producto dejan que WCEP_Tarifas_Producto ajuste el monto según los SKUs que
-// haya en el carrito. El resto deja pasar las tarifas normales de la zona tal cual.
+// (Pickup, porque el cliente retira). Los que tienen monto fijo las reemplazan por una con ese
+// monto (Zoom). Los que aplican tarifas por producto dejan que WCEP_Tarifas_Producto ajuste el
+// monto según los SKUs que haya en el carrito, y los que tienen un mínimo de compra dejan el envío
+// gratis al alcanzarlo. El resto deja pasar las tarifas normales de la zona tal cual.
 class WCEP_Shipping {
 
     // Clave con la que se guarda el método elegido en la sesión de WooCommerce.
     const CLAVE_SESION_METODO = 'wcep_metodo_envio';
 
-    // Nivel de tarifa con el que se cerró el pedido (estandar / especial / whatsapp).
+    // Nivel de tarifa con el que se cerró el pedido (estandar / especial / whatsapp / gratis_monto).
     const META_NIVEL_TARIFA = '_wcep_delivery_tarifa';
+
+    // El pedido llegó al mínimo de compra del método y no pagó envío, traiga los productos que traiga.
+    const NIVEL_GRATIS_POR_MONTO = 'gratis_monto';
 
     public static function init() {
         add_action('woocommerce_checkout_update_order_review', [__CLASS__, 'guardar_metodo_en_sesion']);
@@ -82,31 +86,92 @@ class WCEP_Shipping {
             return $tarifas_disponibles;
         }
 
-        if (get_term_meta($termino->term_id, 'envio_gratis', true) !== '1') {
-            // El método sí cobra: la tarifa sale de la zona de WooCommerce, y solo se ajusta si
-            // tiene activadas las reglas por SKU y el carrito trae alguno de esos productos.
-            if (get_term_meta($termino->term_id, 'aplica_tarifas_producto', true) === '1') {
-                return WCEP_Tarifas_Producto::aplicar_a_tarifas($tarifas_disponibles, $paquete);
+        if (get_term_meta($termino->term_id, 'envio_gratis', true) === '1') {
+            return self::tarifa_propia('wcep_gratis_' . $termino->slug, $termino, 0);
+        }
+
+        // Monto fijo: el método cobra lo mismo en todo el país y no depende de la zona. Es el caso
+        // de Zoom, que cobra por llevar el paquete a la agencia (el flete de Zoom va aparte, a
+        // destino) y se ofrece en ciudades donde WooCommerce no tiene ninguna zona con tarifa.
+        $monto_fijo = self::monto_de_meta($termino, 'monto_fijo');
+        if ($monto_fijo > 0) {
+            $tarifas_disponibles = self::tarifa_propia('wcep_fijo_' . $termino->slug, $termino, $monto_fijo);
+        }
+
+        // El envío gratis por monto va ANTES de las reglas por SKU y les gana a las dos: ni la
+        // tarifa especial ni el "se acuerda por WhatsApp" aplican a una compra que llegó al mínimo.
+        if (self::supera_minimo_gratis($termino, isset($paquete['contents']) ? $paquete['contents'] : [])) {
+            foreach ($tarifas_disponibles as $tarifa) {
+                WCEP_Tarifas_Producto::fijar_costo($tarifa, 0);
+                $tarifa->set_label(self::etiqueta_envio_gratis());
             }
 
             return $tarifas_disponibles;
         }
 
-        $metodo_slug = $termino->slug;
-        $etiqueta    = get_term_meta($termino->term_id, 'etiqueta_envio', true);
+        // El método cobra: el monto solo se ajusta si tiene activadas las reglas por SKU y el
+        // carrito trae alguno de esos productos.
+        if (get_term_meta($termino->term_id, 'aplica_tarifas_producto', true) === '1') {
+            return WCEP_Tarifas_Producto::aplicar_a_tarifas($tarifas_disponibles, $paquete);
+        }
+
+        return $tarifas_disponibles;
+    }
+
+    // Tarifa armada por el plugin, que reemplaza a las de la zona. Se declara "local_pickup" tanto
+    // si es gratis como si cobra: las pasarelas restringidas por método la reconocen por ese id.
+    private static function tarifa_propia($id, $termino, $costo) {
+        $etiqueta = get_term_meta($termino->term_id, 'etiqueta_envio', true);
         if (!$etiqueta) {
             $etiqueta = $termino->name;
         }
 
-        return [
-            'wcep_gratis_' . $metodo_slug => new WC_Shipping_Rate(
-                'wcep_gratis_' . $metodo_slug,
-                $etiqueta,
-                0,
-                [],
-                'local_pickup'
-            ),
-        ];
+        return [$id => new WC_Shipping_Rate($id, $etiqueta, $costo, [], 'local_pickup')];
+    }
+
+    private static function etiqueta_envio_gratis() {
+        return __('Gratis', 'wc-envios-personalizados');
+    }
+
+    // Monto guardado en un meta del método. Vacío o inválido vale 0, que es "no configurado".
+    private static function monto_de_meta($termino, $clave) {
+        return max(0, (float) get_term_meta($termino->term_id, $clave, true));
+    }
+
+    // Lo que suma la compra para el envío gratis: productos después de cupones y descuentos, sin
+    // el envío. Se le suman los impuestos solo si la tienda muestra los precios con impuestos, para
+    // comparar contra el mismo número que el cliente ve en su subtotal.
+    private static function total_de_lineas($lineas) {
+        $con_impuestos = WC()->cart && WC()->cart->display_prices_including_tax();
+        $total         = 0.0;
+
+        foreach ((array) $lineas as $linea) {
+            $total += isset($linea['line_total']) ? (float) $linea['line_total'] : 0;
+
+            if ($con_impuestos) {
+                $total += isset($linea['line_tax']) ? (float) $linea['line_tax'] : 0;
+            }
+        }
+
+        return round($total, wc_get_price_decimals());
+    }
+
+    private static function supera_minimo_gratis($termino, $lineas) {
+        $minimo = self::monto_de_meta($termino, 'gratis_desde');
+
+        return $minimo > 0 && self::total_de_lineas($lineas) >= $minimo;
+    }
+
+    // Las mismas líneas que WooCommerce manda en el paquete de envío: los productos virtuales no
+    // cuentan para el mínimo, porque tampoco viajan.
+    private static function lineas_con_envio() {
+        if (!WC()->cart) {
+            return [];
+        }
+
+        return array_filter(WC()->cart->get_cart(), function ($linea) {
+            return isset($linea['data']) && $linea['data'] instanceof WC_Product && $linea['data']->needs_shipping();
+        });
     }
 
     // La fila "Envío" de "Tu pedido" sale como "Tasa mínima BECO: Ref.5,00". El nombre de la tarifa
@@ -117,6 +182,12 @@ class WCEP_Shipping {
     // toca solo acá, en el checkout; en el admin, los correos y la factura sigue completo. Vaciarlo
     // desde la zona de WooCommerce no es alternativa: deja el método sin nombre y desaparece.
     public static function etiqueta_linea_envio($etiqueta, $tarifa) {
+        // La columna de montos de "Tu pedido" es angosta y partía "Envío gratis" en dos renglones.
+        // Se envuelve solo este texto: el mensaje de WhatsApp es largo y sí necesita partirse.
+        if ($tarifa->get_label() === self::etiqueta_envio_gratis()) {
+            return '<span class="wcep-envio-gratis">' . esc_html($etiqueta) . '</span>';
+        }
+
         $termino = self::termino_actual();
 
         if (!$termino || get_term_meta($termino->term_id, 'ocultar_etiqueta_envio', true) !== '1') {
@@ -140,6 +211,13 @@ class WCEP_Shipping {
         $termino = self::termino_actual();
 
         if (!$termino || get_term_meta($termino->term_id, 'aplica_tarifas_producto', true) !== '1') {
+            return;
+        }
+
+        // Con envío gratis por monto no queda nada que acordar: si se guardara "whatsapp", el
+        // admin recibiría el aviso de llamar al cliente por un flete que ya no se cobra.
+        if (self::supera_minimo_gratis($termino, self::lineas_con_envio())) {
+            $pedido->update_meta_data(self::META_NIVEL_TARIFA, self::NIVEL_GRATIS_POR_MONTO);
             return;
         }
 

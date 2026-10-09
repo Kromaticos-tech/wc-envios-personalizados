@@ -519,3 +519,10 @@
     font-size: 0.875rem;
     color: #9ca3af;
 }
+
+
+/* --- Fila "Envío" de "Tu pedido" ------------------------------------------ */
+/* La columna de montos es angosta y partía "Envío gratis" en dos renglones. */
+.wcep-envio-gratis {
+    white-space: nowrap;
+}

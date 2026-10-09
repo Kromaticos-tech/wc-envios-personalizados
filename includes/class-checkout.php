@@ -150,7 +150,9 @@ class WCEP_Checkout {
             'estilo_aviso'           => $valores['estilo_aviso'],
             'aviso_titulo'           => $valores['aviso_titulo'],
             'aviso_direccion'        => $valores['aviso_direccion'],
-            'mensaje_adicional'      => $valores['mensaje_adicional'],
+            // Oculto no es borrado: el texto sigue guardado en el admin y solo deja de viajar al
+            // checkout, que sin mensaje no pinta la caja.
+            'mensaje_adicional'      => $valores['ocultar_mensaje_adicional'] === '1' ? '' : $valores['mensaje_adicional'],
             'mostrar_resumen'        => $valores['mostrar_resumen'] === '1',
             'prefijo_disponibilidad' => $valores['prefijo_disponibilidad'],
             'nota_disponibilidad'    => $valores['nota_disponibilidad'],

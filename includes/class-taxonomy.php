@@ -125,6 +125,7 @@ class WCEP_Taxonomy {
                     'descripcion'           => __('Entregas en Caracas', 'wc-envios-personalizados'),
                     'orden'                 => 2,
                     'muestra_datos_entrega' => '1',
+                    'gratis_desde'          => self::GRATIS_DESDE_PREDETERMINADO,
                     // Sin caja de resumen. La caja morada con "Delivery" y una dirección fija se
                     // retiró a pedido del cliente (10/09/2026): al elegir Delivery se pasa directo
                     // a "¿Cuándo quieres recibirlo?".
@@ -138,17 +139,65 @@ class WCEP_Taxonomy {
                     'orden'            => 3,
                     'requiere_ciudad'  => '1',
                     'requiere_sede'    => '1',
-                    'envio_gratis'     => '1',
                     // Las oficinas de Zoom son cientos y no son tiendas del cliente: van en el CPT
                     // propio para no mezclarlas con "tiendas".
                     'post_type_sedes'  => WCEP_Sede_CPT::POST_TYPE,
                     'placeholder_sede' => __('Escoge sede Zoom', 'wc-envios-personalizados'),
-                    // Sin caja de resumen al elegir la oficina: lo que el cliente necesita saber de
-                    // Zoom es el cobro a destino, y eso ya lo dice el mensaje de arriba.
+                    // Sin caja de resumen al elegir la oficina.
                     'mostrar_resumen'  => '0',
-                ],
+                ] + self::metas_cobro_zoom(),
             ],
         ];
+    }
+
+    const MONTO_ZOOM_PREDETERMINADO   = '5';
+    const GRATIS_DESDE_PREDETERMINADO = '120';
+
+    // Marca de que la migración al cobro de la 1.17.0 ya corrió en este sitio.
+    const OPCION_MIGRACION_COBRO = 'wcep_migracion_cobro_envios';
+
+    // Cómo cobra Zoom desde la 1.17.0. Antes iba con "no cobrar envío" porque el cliente solo le
+    // pagaba al transportista en destino; ahora la tienda cobra además el traslado del paquete a
+    // la agencia, con las mismas reglas por SKU y el mismo envío gratis por monto que Delivery.
+    private static function metas_cobro_zoom() {
+        return [
+            'envio_gratis'              => '0',
+            'monto_fijo'                => self::MONTO_ZOOM_PREDETERMINADO,
+            'gratis_desde'              => self::GRATIS_DESDE_PREDETERMINADO,
+            'aplica_tarifas_producto'   => '1',
+            'ocultar_etiqueta_envio'    => '1',
+            // El aviso de "Cobro a destino" queda cargado pero oculto, a pedido del cliente.
+            'ocultar_mensaje_adicional' => '1',
+        ];
+    }
+
+    // Lleva los sitios ya instalados al cobro nuevo, una sola vez. No sirve el sembrado de
+    // siempre: ese solo rellena lo que está vacío, y acá hay que DESMARCAR "no cobrar envío" en
+    // Zoom. Por eso se toca solo un Zoom que siga en la configuración vieja; si el administrador ya
+    // le quitó la casilla, se asume que lo configuró a mano y no se le pisa nada.
+    private static function migrar_cobro_envios() {
+        if (get_option(self::OPCION_MIGRACION_COBRO)) {
+            return;
+        }
+
+        $zoom     = get_term_by('slug', 'zoom', 'metodo_envio');
+        $delivery = get_term_by('slug', 'delivery', 'metodo_envio');
+
+        update_option(self::OPCION_MIGRACION_COBRO, '1');
+
+        if ($zoom && get_term_meta($zoom->term_id, 'envio_gratis', true) === '1') {
+            foreach (self::metas_cobro_zoom() as $clave => $valor) {
+                update_term_meta($zoom->term_id, $clave, $valor);
+            }
+        }
+
+        if ($delivery && get_term_meta($delivery->term_id, 'gratis_desde', true) === '') {
+            update_term_meta($delivery->term_id, 'gratis_desde', self::GRATIS_DESDE_PREDETERMINADO);
+        }
+
+        if (class_exists('WC_Cache_Helper')) {
+            WC_Cache_Helper::get_transient_version('shipping', true);
+        }
     }
 
     // Solo en una instalación nueva, con la taxonomía vacía. Si ya hay métodos cargados no se crea
@@ -194,6 +243,7 @@ class WCEP_Taxonomy {
 
     public static function sembrar_predeterminados() {
         self::crear_metodos_de_arranque();
+        self::migrar_cobro_envios();
 
         if (get_option(self::OPCION_SEMBRADO) === self::VERSION_SEMBRADO) {
             return;
@@ -331,7 +381,21 @@ class WCEP_Taxonomy {
             <th><?php esc_html_e('No cobrar envío', 'wc-envios-personalizados'); ?></th>
             <td>
                 <label><input type="checkbox" name="envio_gratis" value="1" <?php checked($valores['envio_gratis'], '1'); ?>> <?php esc_html_e('Sí', 'wc-envios-personalizados'); ?></label>
-                <p class="description"><?php esc_html_e('Reemplaza las tarifas de la zona por un envío de costo 0. Márcalo en Pickup (el cliente retira) y en Zoom (le paga al transportista en destino). Déjalo sin marcar en Delivery, que sí cobra la tarifa de la zona.', 'wc-envios-personalizados'); ?></p>
+                <p class="description"><?php esc_html_e('Reemplaza las tarifas de la zona por un envío de costo 0. Márcalo en Pickup (el cliente retira). Déjalo sin marcar en Delivery, que cobra la tarifa de la zona, y en Zoom, que cobra el monto fijo de abajo.', 'wc-envios-personalizados'); ?></p>
+            </td>
+        </tr>
+        <tr class="form-field">
+            <th><label for="monto_fijo"><?php esc_html_e('Monto fijo del envío', 'wc-envios-personalizados'); ?></label></th>
+            <td>
+                <input type="text" name="monto_fijo" id="monto_fijo" value="<?php echo esc_attr($valores['monto_fijo']); ?>" class="small-text" placeholder="Ej: 5">
+                <p class="description"><?php esc_html_e('Reemplaza las tarifas de la zona por un envío con este monto, igual en todo el país. Úsalo en Zoom, para cobrar el traslado del paquete a la agencia (el flete de Zoom lo paga el cliente aparte, a destino). Vacío, se cobra la tarifa de la zona de WooCommerce.', 'wc-envios-personalizados'); ?></p>
+            </td>
+        </tr>
+        <tr class="form-field">
+            <th><label for="gratis_desde"><?php esc_html_e('Envío gratis desde', 'wc-envios-personalizados'); ?></label></th>
+            <td>
+                <input type="text" name="gratis_desde" id="gratis_desde" value="<?php echo esc_attr($valores['gratis_desde']); ?>" class="small-text" placeholder="Ej: 120">
+                <p class="description"><?php esc_html_e('Si la compra llega a este monto, el envío no se cobra. Se mide sobre los productos después de cupones y descuentos, sin contar el envío. Tiene prioridad sobre las tarifas por producto: tampoco se cobra la tarifa especial ni se muestra el mensaje de WhatsApp. Vacío, no hay envío gratis por monto.', 'wc-envios-personalizados'); ?></p>
             </td>
         </tr>
         <tr class="form-field">
@@ -410,6 +474,13 @@ class WCEP_Taxonomy {
                 <p class="description">
                     <?php esc_html_e('A diferencia del título y la dirección de arriba, este funciona en todos los métodos, elijan sede o no.', 'wc-envios-personalizados'); ?>
                 </p>
+            </td>
+        </tr>
+        <tr class="form-field">
+            <th><?php esc_html_e('Ocultar el mensaje', 'wc-envios-personalizados'); ?></th>
+            <td>
+                <label><input type="checkbox" name="ocultar_mensaje_adicional" value="1" <?php checked($valores['ocultar_mensaje_adicional'], '1'); ?>> <?php esc_html_e('Sí', 'wc-envios-personalizados'); ?></label>
+                <p class="description"><?php esc_html_e('El mensaje deja de mostrarse en el checkout pero el texto queda guardado acá. Desmarca la casilla para volver a mostrarlo.', 'wc-envios-personalizados'); ?></p>
             </td>
         </tr>
 
@@ -558,7 +629,9 @@ class WCEP_Taxonomy {
             'post_type_sedes'         => WCEP_Sede_CPT::post_type_de_termino($termino_id),
             'mostrar_resumen'         => get_term_meta($termino_id, 'mostrar_resumen', true),
             'envio_gratis'            => get_term_meta($termino_id, 'envio_gratis', true),
-            'etiqueta_envio'          => get_term_meta($termino_id, 'etiqueta_envio', true),
+            'monto_fijo'              => get_term_meta($termino_id, 'monto_fijo', true),
+            'gratis_desde'            => get_term_meta($termino_id, 'gratis_desde', true),
+            'etiqueta_envio'         => get_term_meta($termino_id, 'etiqueta_envio', true),
             'ocultar_etiqueta_envio'  => get_term_meta($termino_id, 'ocultar_etiqueta_envio', true),
             'aplica_tarifas_producto' => get_term_meta($termino_id, 'aplica_tarifas_producto', true),
             'avisa_pedido_listo'      => get_term_meta($termino_id, 'avisa_pedido_listo', true),
@@ -566,7 +639,8 @@ class WCEP_Taxonomy {
             'aviso_titulo'            => get_term_meta($termino_id, 'aviso_titulo', true),
             'aviso_direccion'         => get_term_meta($termino_id, 'aviso_direccion', true),
             'mensaje_adicional'       => get_term_meta($termino_id, 'mensaje_adicional', true),
-            'icono'                   => get_term_meta($termino_id, 'icono', true),
+            'ocultar_mensaje_adicional' => get_term_meta($termino_id, 'ocultar_mensaje_adicional', true),
+            'icono'                  => get_term_meta($termino_id, 'icono', true),
             'icono_activo'            => get_term_meta($termino_id, 'icono_activo', true),
             'ilustracion'             => get_term_meta($termino_id, 'ilustracion', true),
             'prefijo_disponibilidad'  => get_term_meta($termino_id, 'prefijo_disponibilidad', true),
@@ -604,9 +678,24 @@ class WCEP_Taxonomy {
         $casillas = [
             'requiere_ciudad', 'requiere_sede', 'muestra_datos_entrega', 'mostrar_resumen',
             'envio_gratis', 'ocultar_etiqueta_envio', 'aplica_tarifas_producto', 'avisa_pedido_listo',
+            'ocultar_mensaje_adicional',
         ];
         foreach ($casillas as $campo) {
             update_term_meta($termino_id, $campo, isset($_POST[$campo]) ? '1' : '0');
+        }
+
+        // Un monto vacío o en 0 se guarda vacío: los dos significan "no configurado", y así el
+        // campo vuelve a mostrarse en blanco en vez de con un 0 que parece un precio.
+        foreach (['monto_fijo', 'gratis_desde'] as $campo) {
+            $monto = (float) wc_format_decimal(wp_unslash($_POST[$campo] ?? ''));
+            update_term_meta($termino_id, $campo, $monto > 0 ? (string) $monto : '');
+        }
+
+        // Las tarifas quedan cacheadas por cliente bajo un hash que no incluye estos campos. Sin
+        // invalidarlo, cambiar un monto no se vería en el checkout hasta que cada cliente tocara
+        // su carrito.
+        if (class_exists('WC_Cache_Helper')) {
+            WC_Cache_Helper::get_transient_version('shipping', true);
         }
 
         update_term_meta($termino_id, 'orden', absint($_POST['orden'] ?? 0));

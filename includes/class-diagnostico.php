@@ -141,7 +141,20 @@ class WCEP_Diagnostico {
             return __('Gratis', 'wc-envios-personalizados') . ' — ' . $etiqueta_envio;
         }
 
-        $partes = [__('Tarifa de la zona', 'wc-envios-personalizados')];
+        $monto_fijo   = (float) get_term_meta($termino->term_id, 'monto_fijo', true);
+        $gratis_desde = (float) get_term_meta($termino->term_id, 'gratis_desde', true);
+
+        $partes = [
+            $monto_fijo > 0
+                // translators: %s es el monto fijo del envío.
+                ? sprintf(__('Monto fijo %s', 'wc-envios-personalizados'), wc_format_localized_price($monto_fijo))
+                : __('Tarifa de la zona', 'wc-envios-personalizados'),
+        ];
+
+        if ($gratis_desde > 0) {
+            // translators: %s es el monto de compra desde el que el envío es gratis.
+            $partes[] = sprintf(__('gratis desde %s', 'wc-envios-personalizados'), wc_format_localized_price($gratis_desde));
+        }
 
         if (get_term_meta($termino->term_id, 'aplica_tarifas_producto', true) === '1') {
             $partes[] = sprintf(

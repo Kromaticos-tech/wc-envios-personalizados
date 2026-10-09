@@ -190,7 +190,7 @@ class WCEP_Tarifas_Producto {
     // Cambiar el costo sin tocar los impuestos dejaría calculado el IVA del monto viejo. Se
     // reescalan en la misma proporción, que respeta la configuración de impuestos de la zona sea
     // cual sea.
-    private static function fijar_costo($tarifa, $costo_nuevo) {
+    public static function fijar_costo($tarifa, $costo_nuevo) {
         $costo_actual = (float) $tarifa->get_cost();
         $impuestos    = $tarifa->get_taxes();
 

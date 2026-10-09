@@ -5,6 +5,7 @@ if (!defined('WP_UNINSTALL_PLUGIN')) exit;
 delete_option('wcep_version');
 delete_option('wcep_nota_feriados_limpiada');
 delete_option('wcep_frase_retiro_actualizada');
+delete_option('wcep_migracion_cobro_envios');
 
 // Tarifas de delivery por producto.
 delete_option('wcep_delivery_skus_especial');
