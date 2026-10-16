@@ -130,7 +130,7 @@ class WCEP_Shipping {
     }
 
     private static function etiqueta_envio_gratis() {
-        return __('Gratis', 'wc-envios-personalizados');
+        return __('Envío gratis', 'wc-envios-personalizados');
     }
 
     // Monto guardado en un meta del método. Vacío o inválido vale 0, que es "no configurado".
@@ -139,18 +139,34 @@ class WCEP_Shipping {
     }
 
     // Lo que suma la compra para el envío gratis: productos después de cupones y descuentos, sin
-    // el envío. Se le suman los impuestos solo si la tienda muestra los precios con impuestos, para
-    // comparar contra el mismo número que el cliente ve en su subtotal.
+    // el envío, medido SIEMPRE en la moneda base de la tienda.
+    //
+    // El mínimo se carga en Ref (120), pero los totales del carrito vienen en la moneda que eligió
+    // el cliente. Comparar line_total directo contra el mínimo regalaba el envío a todo el que
+    // pagaba en bolívares: Bs. 3.647 "superaba" los 120 aunque fueran Ref.6,21.
+    //
+    // Por eso se parte del precio guardado en el producto (contexto 'edit', que los conversores de
+    // moneda no filtran) y se le aplica la misma proporción de descuento que tuvo la línea. La
+    // proporción no depende de la moneda, así que el resultado es el mismo en Ref que en Bs.
     private static function total_de_lineas($lineas) {
-        $con_impuestos = WC()->cart && WC()->cart->display_prices_including_tax();
-        $total         = 0.0;
+        $total = 0.0;
 
         foreach ((array) $lineas as $linea) {
-            $total += isset($linea['line_total']) ? (float) $linea['line_total'] : 0;
-
-            if ($con_impuestos) {
-                $total += isset($linea['line_tax']) ? (float) $linea['line_tax'] : 0;
+            $producto = isset($linea['data']) ? $linea['data'] : null;
+            if (!$producto instanceof WC_Product) {
+                continue;
             }
+
+            $subtotal_linea = (float) ($linea['line_subtotal'] ?? 0) + (float) ($linea['line_subtotal_tax'] ?? 0);
+            if ($subtotal_linea <= 0) {
+                continue;
+            }
+
+            $total_linea       = (float) ($linea['line_total'] ?? 0) + (float) ($linea['line_tax'] ?? 0);
+            $proporcion_pagada = $total_linea / $subtotal_linea;
+            $precio_base       = (float) $producto->get_price('edit') * (float) ($linea['quantity'] ?? 1);
+
+            $total += $precio_base * $proporcion_pagada;
         }
 
         return round($total, wc_get_price_decimals());
